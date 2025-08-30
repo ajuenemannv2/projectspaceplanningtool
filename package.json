@@ -1,0 +1,25 @@
+{
+  "name": "staging-space-tool",
+  "version": "1.0.0",
+  "description": "Web-based drawing tool for construction contractors to request staging space",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "build": "echo 'No build step required'"
+  },
+  "keywords": [
+    "leaflet",
+    "mapping",
+    "construction",
+    "staging",
+    "power-platform"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

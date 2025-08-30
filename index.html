@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Staging Space Request Tool</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1>Staging Space Request Tool</h1>
+                <p>Select your campus and draw your requested staging area on the map below</p>
+                <a href="admin.html" class="admin-link" onclick="openAdminPanel(event)">
+                    <i class="fas fa-cog"></i> Admin Panel
+                </a>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Form Panel -->
+            <div class="form-panel">
+                <div class="form-section">
+                    <h3>Request Details</h3>
+                    
+                    <div class="form-group">
+                        <label for="campusSelect">Campus *</label>
+                        <select id="campusSelect" required>
+                            <option value="">Select campus</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="companyName">Company Name *</label>
+                        <select id="companyName" required>
+                            <option value="">Select your company</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="contactName">Contact Name *</label>
+                        <input type="text" id="contactName" required placeholder="Enter contact name">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="contactEmail">Contact Email *</label>
+                        <input type="email" id="contactEmail" required placeholder="Enter contact email">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="requestedArea">Requested Area (sq ft)</label>
+                        <input type="number" id="requestedArea" placeholder="Estimated square footage">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="startDate">Start Date *</label>
+                        <input type="date" id="startDate" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="endDate">End Date *</label>
+                        <input type="date" id="endDate" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="description">Description</label>
+                        <textarea id="description" rows="3" placeholder="Describe your staging needs, equipment, materials, etc."></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Map Container -->
+            <div class="map-container">
+                <div class="map-header">
+                    <h3>Map View</h3>
+                    <div class="map-controls">
+                        <div class="drawing-controls">
+                            <button id="clearDrawing" class="btn btn-secondary">Clear Drawing</button>
+                            <button id="resetView" class="btn btn-secondary">Reset View</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="map"></div>
+                
+                <!-- Drawing Status -->
+                <div class="drawing-status" id="drawingStatus">
+                    <div class="status-indicator">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Ready to draw</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Action Buttons -->
+        <div class="action-buttons">
+            <button id="submitRequest" class="btn btn-primary" disabled>
+                Submit Staging Request
+            </button>
+            <button id="previewRequest" class="btn btn-secondary">
+                Preview Request
+            </button>
+        </div>
+
+        <!-- Preview Modal -->
+        <div id="previewModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Request Preview</h3>
+                    <span class="close">&times;</span>
+                </div>
+                <div class="modal-body" id="previewContent">
+                    <!-- Preview content will be inserted here -->
+                </div>
+                <div class="modal-footer">
+                    <button id="confirmSubmit" class="btn btn-primary">Confirm & Submit</button>
+                    <button id="cancelSubmit" class="btn btn-secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Success Modal -->
+        <div id="successModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Request Submitted Successfully!</h3>
+                    <span class="close">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <p>Your staging space request has been submitted and is pending approval.</p>
+                    <p><strong>Request ID:</strong> <span id="requestId"></span></p>
+                    <p>You will receive an email confirmation shortly.</p>
+                </div>
+                <div class="modal-footer">
+                    <button id="newRequest" class="btn btn-primary">Submit Another Request</button>
+                    <button id="closeSuccess" class="btn btn-secondary">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+    
+    <!-- Leaflet GeometryUtil for area calculations -->
+    <script src="https://unpkg.com/leaflet-geometryutil@0.11.0/src/leaflet.geometryutil.js"></script>
+    
+    <!-- Custom JS -->
+    <script src="script.js"></script>
+</body>
+</html>

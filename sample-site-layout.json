@@ -1,0 +1,145 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Main Office Building",
+        "type": "building",
+        "description": "Primary office and meeting space",
+        "status": "existing"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-74.0065, 40.7130],
+          [-74.0060, 40.7130],
+          [-74.0060, 40.7125],
+          [-74.0065, 40.7125],
+          [-74.0065, 40.7130]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Employee Parking",
+        "type": "parking",
+        "description": "Designated employee parking area",
+        "status": "existing"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-74.0070, 40.7135],
+          [-74.0065, 40.7135],
+          [-74.0065, 40.7130],
+          [-74.0070, 40.7130],
+          [-74.0070, 40.7135]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Construction Site A",
+        "type": "construction-zone",
+        "description": "Phase 1 construction area",
+        "status": "active"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-74.0075, 40.7120],
+          [-74.0070, 40.7120],
+          [-74.0070, 40.7115],
+          [-74.0075, 40.7115],
+          [-74.0075, 40.7120]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Material Storage Area",
+        "type": "storage",
+        "description": "Current material storage location",
+        "status": "existing"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-74.0080, 40.7130],
+          [-74.0075, 40.7130],
+          [-74.0075, 40.7125],
+          [-74.0080, 40.7125],
+          [-74.0080, 40.7130]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Equipment Yard",
+        "type": "equipment",
+        "description": "Heavy equipment storage and maintenance",
+        "status": "existing"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-74.0085, 40.7140],
+          [-74.0080, 40.7140],
+          [-74.0080, 40.7135],
+          [-74.0085, 40.7135],
+          [-74.0085, 40.7140]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Site Entrance",
+        "type": "access",
+        "description": "Main site entrance and security checkpoint",
+        "status": "existing"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-74.0068, 40.7132]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Utility Connections",
+        "type": "utilities",
+        "description": "Water, electrical, and gas connections",
+        "status": "existing"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-74.0072, 40.7128]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Restricted Area",
+        "type": "restricted",
+        "description": "No access area - safety zone",
+        "status": "existing"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-74.0068, 40.7118],
+          [-74.0063, 40.7118],
+          [-74.0063, 40.7113],
+          [-74.0068, 40.7113],
+          [-74.0068, 40.7118]
+        ]]
+      }
+    }
+  ]
+}
