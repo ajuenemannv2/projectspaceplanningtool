@@ -931,10 +931,30 @@ function collectFormData() {
 
 async function loadSiteLayout() {
     try {
-        // For Vercel deployment, we'll use a fallback approach
-        // In production, this would be served by your backend
-        console.log('Loading site layout...');
-        return null; // We'll handle this differently for static deployment
+        // For static deployment, we'll create basic campus layout data
+        const siteLayout = {
+            type: "FeatureCollection",
+            features: [
+                {
+                    type: "Feature",
+                    geometry: {
+                        type: "Polygon",
+                        coordinates: [[
+                            [-122.91389689455964, 45.5442515697061],
+                            [-122.91289689455964, 45.5442515697061],
+                            [-122.91289689455964, 45.5452515697061],
+                            [-122.91389689455964, 45.5452515697061],
+                            [-122.91389689455964, 45.5442515697061]
+                        ]]
+                    },
+                    properties: {
+                        name: "Intel Ronler Acres Campus",
+                        type: "campus"
+                    }
+                }
+            ]
+        };
+        return siteLayout;
     } catch (error) {
         console.error('Error loading site layout:', error);
         return null;
@@ -943,11 +963,17 @@ async function loadSiteLayout() {
 
 async function loadConstructionCampusTopoJSON() {
     try {
-        // For static deployment, we'll create a minimal TopoJSON structure
-        // In production, this would load from your backend
-        const minimalTopoJSON = {
+        // For static deployment, we'll create a simplified TopoJSON structure
+        // that includes the basic campus layout
+        const campusTopoJSON = {
             type: "Topology",
-            arcs: [],
+            arcs: [
+                // Main campus boundary
+                [[-122.91389689455964, 45.5442515697061], [0.001, 0], [0, 0.001], [-0.001, 0], [0, -0.001]],
+                // Building outlines (simplified)
+                [[-122.91389689455964, 45.5442515697061], [0.0005, 0], [0, 0.0005], [-0.0005, 0], [0, -0.0005]],
+                [[-122.91389689455964, 45.5442515697061], [0.0003, 0.0003], [-0.0003, 0.0003], [-0.0003, -0.0003], [0.0003, -0.0003]]
+            ],
             transform: {
                 scale: [0.000001, 0.000001],
                 translate: [-122.91389689455964, 45.5442515697061]
@@ -955,11 +981,36 @@ async function loadConstructionCampusTopoJSON() {
             objects: {
                 "Test Split V2": {
                     type: "GeometryCollection",
-                    geometries: []
+                    geometries: [
+                        {
+                            type: "Polygon",
+                            arcs: [[0]],
+                            properties: {
+                                "Building ID": "Campus Boundary",
+                                "SQ_FT": 1000000
+                            }
+                        },
+                        {
+                            type: "Polygon", 
+                            arcs: [[1]],
+                            properties: {
+                                "Building ID": "Main Building",
+                                "SQ_FT": 500000
+                            }
+                        },
+                        {
+                            type: "Polygon",
+                            arcs: [[2]], 
+                            properties: {
+                                "Building ID": "Support Building",
+                                "SQ_FT": 250000
+                            }
+                        }
+                    ]
                 }
             }
         };
-        return minimalTopoJSON;
+        return campusTopoJSON;
     } catch (error) {
         console.error('Error loading construction campus TopoJSON:', error);
         return null;
