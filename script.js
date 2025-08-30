@@ -931,12 +931,10 @@ function collectFormData() {
 
 async function loadSiteLayout() {
     try {
-        const response = await fetch('construction-campusog.json');
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-        return data;
+        // For Vercel deployment, we'll use a fallback approach
+        // In production, this would be served by your backend
+        console.log('Loading site layout...');
+        return null; // We'll handle this differently for static deployment
     } catch (error) {
         console.error('Error loading site layout:', error);
         return null;
@@ -945,12 +943,23 @@ async function loadSiteLayout() {
 
 async function loadConstructionCampusTopoJSON() {
     try {
-        const response = await fetch('construction-campusog.json');
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const topoJSON = await response.json();
-        return topoJSON;
+        // For static deployment, we'll create a minimal TopoJSON structure
+        // In production, this would load from your backend
+        const minimalTopoJSON = {
+            type: "Topology",
+            arcs: [],
+            transform: {
+                scale: [0.000001, 0.000001],
+                translate: [-122.91389689455964, 45.5442515697061]
+            },
+            objects: {
+                "Test Split V2": {
+                    type: "GeometryCollection",
+                    geometries: []
+                }
+            }
+        };
+        return minimalTopoJSON;
     } catch (error) {
         console.error('Error loading construction campus TopoJSON:', error);
         return null;

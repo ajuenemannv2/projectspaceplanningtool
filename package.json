@@ -2,11 +2,11 @@
   "name": "staging-space-tool",
   "version": "1.0.0",
   "description": "Web-based drawing tool for construction contractors to request staging space",
-  "main": "server.js",
+  "main": "index.html",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js",
-    "build": "echo 'No build step required'"
+    "start": "echo 'Static site - open index.html in browser'",
+    "dev": "echo 'Static site - open index.html in browser'",
+    "build": "echo 'No build step required for static site'"
   },
   "keywords": [
     "leaflet",
