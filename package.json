@@ -1,12 +1,12 @@
 {
   "name": "staging-space-tool",
   "version": "1.0.0",
+  "type": "module",
   "description": "Web-based drawing tool for construction contractors to request staging space",
-  "main": "index.html",
+  "main": "server.js",
   "scripts": {
-    "start": "echo 'Static site - open index.html in browser'",
-    "dev": "echo 'Static site - open index.html in browser'",
-    "build": "echo 'No build step required for static site'"
+    "start": "node server.js",
+    "dev": "node server.js"
   },
   "keywords": [
     "leaflet",
@@ -17,9 +17,7 @@
   ],
   "author": "Your Name",
   "license": "MIT",
-  "dependencies": {},
-  "devDependencies": {},
-  "engines": {
-    "node": ">=18.0.0"
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4"
   }
 }

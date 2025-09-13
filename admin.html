@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Staging Space Tool - Admin Panel</title>
+    <title>Project Space Management Tool - Admin Panel</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
     <link rel="stylesheet" href="admin-styles.css" />
@@ -12,22 +12,31 @@
     <div class="admin-container">
         <!-- Header -->
         <header class="admin-header">
-            <h1><i class="fas fa-tools"></i> Staging Space Tool - Admin Panel</h1>
+            <h1><i class="fas fa-tools"></i> Project Space Management Tool - Admin Panel</h1>
             <div class="admin-nav">
                 <button class="nav-btn active" data-tab="dashboard">
                     <i class="fas fa-chart-line"></i> Dashboard
                 </button>
-                <button class="nav-btn" data-tab="campuses">
-                    <i class="fas fa-map-marker-alt"></i> Campuses
+                <button class="nav-btn" data-tab="projects">
+                    <i class="fas fa-project-diagram"></i> Projects
                 </button>
-                <button class="nav-btn" data-tab="contractors">
-                    <i class="fas fa-building"></i> Contractors
+                <button class="nav-btn" data-tab="spaces">
+                    <i class="fas fa-map-marker-alt"></i> Spaces
+                </button>
+                <button class="nav-btn" data-tab="categories">
+                    <i class="fas fa-tags"></i> Categories
+                </button>
+                <button class="nav-btn" data-tab="companies">
+                    <i class="fas fa-building"></i> Companies
                 </button>
                 <button class="nav-btn" data-tab="activity">
                     <i class="fas fa-history"></i> Activity Log
                 </button>
                 <button class="nav-btn" data-tab="settings">
                     <i class="fas fa-cog"></i> Settings
+                </button>
+                <button class="nav-btn" onclick="window.location.href='logistics-map.html'">
+                    <i class="fas fa-map"></i> Logistics Map
                 </button>
                 <button class="nav-btn" onclick="window.location.href='index.html'">
                     <i class="fas fa-arrow-left"></i> Back to Tool
@@ -42,118 +51,162 @@
                 <h2>Dashboard Overview</h2>
                 <div class="dashboard-grid">
                     <div class="stat-card">
-                        <h3>Total Requests</h3>
-                        <p id="totalRequests">0</p>
+                        <h3>Total Projects</h3>
+                        <p id="totalProjects">0</p>
                     </div>
                     <div class="stat-card">
-                        <h3>Active Campuses</h3>
-                        <p id="activeCampuses">0</p>
+                        <h3>Active Projects</h3>
+                        <p id="activeProjects">0</p>
                     </div>
                     <div class="stat-card">
-                        <h3>Total Contractors</h3>
-                        <p id="totalContractors">0</p>
+                        <h3>Total Spaces</h3>
+                        <p id="totalSpaces">0</p>
                     </div>
                     <div class="stat-card">
-                        <h3>Total Area (sq ft)</h3>
-                        <p id="totalArea">0</p>
+                        <h3>Total Phases</h3>
+                        <p id="totalPhases">0</p>
                     </div>
                 </div>
                 <div class="chart-container">
-                    <canvas id="requestsChart"></canvas>
+                    <h3>Recent Activity</h3>
+                    <div id="recentActivity">
+                        <!-- Recent activity will be loaded here -->
+                    </div>
                 </div>
             </div>
 
-            <!-- Campuses Tab -->
-            <div id="campuses" class="tab-content">
-                <h2>Campus Management</h2>
-                <div class="action-bar">
-                    <button class="btn btn-primary" onclick="showAddCampusModal()">
-                        <i class="fas fa-plus"></i> Add Campus
-                    </button>
-                    <button class="btn btn-secondary" onclick="exportCampuses()">
-                        <i class="fas fa-download"></i> Export
+            <!-- Projects Tab -->
+            <div id="projects" class="tab-content">
+                <div class="tab-header">
+                    <h2>Project Management</h2>
+                    <button class="btn btn-primary" id="addProjectBtn">
+                        <i class="fas fa-plus"></i> Add Project
                     </button>
                 </div>
                 <div class="table-container">
-                    <table id="campusesTable">
+                    <table id="projectsTable" class="admin-table">
                         <thead>
                             <tr>
-                                <th>Name</th>
+                                <th>Project Name</th>
                                 <th>Coordinates</th>
                                 <th>Zoom Level</th>
                                 <th>Status</th>
+                                <th>Created</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
-                        <tbody id="campusesTableBody">
-                            <!-- Populated by JavaScript -->
+                        <tbody>
+                            <!-- Projects will be loaded here -->
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            <!-- Contractors Tab -->
-            <div id="contractors" class="tab-content">
-                <h2>Contractor Management</h2>
-                <div class="action-bar">
-                    <button class="btn btn-primary" onclick="showAddContractorModal()">
-                        <i class="fas fa-plus"></i> Add Contractor
-                    </button>
-                    <button class="btn btn-secondary" onclick="exportContractors()">
-                        <i class="fas fa-download"></i> Export
+
+            <!-- Spaces Tab -->
+            <div id="spaces" class="tab-content">
+                <div class="tab-header">
+                    <h2>Space Management</h2>
+                    <button class="btn btn-primary" id="addSpaceBtn" disabled>
+                        <i class="fas fa-plus"></i> Add Space
                     </button>
                 </div>
+                <div class="info-box">
+                    <i class="fas fa-info-circle"></i>
+                    <span>Select a project first to manage its spaces</span>
+                </div>
                 <div class="table-container">
-                    <table id="contractorsTable">
+                    <table id="spacesTable" class="admin-table">
                         <thead>
                             <tr>
-                                <th>Company Name</th>
-                                <th>Contact Person</th>
-                                <th>Email</th>
-                                <th>Phone</th>
+                                <th>Space Name</th>
+                                <th>Project</th>
+                                <th>Category</th>
+                                <th>Trade</th>
+                                <th>Description</th>
                                 <th>Status</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
-                        <tbody id="contractorsTableBody">
-                            <!-- Populated by JavaScript -->
+                        <tbody>
+                            <!-- Spaces will be loaded here -->
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            <!-- Activity Log Tab -->
-            <div id="activity" class="tab-content">
-                <h2>Activity Log</h2>
-                <div class="filter-bar">
-                    <select id="activityFilter">
-                        <option value="all">All Activities</option>
-                        <option value="request">Staging Requests</option>
-                        <option value="admin">Admin Changes</option>
-                        <option value="system">System Events</option>
-                    </select>
-                    <input type="date" id="activityDateFrom" placeholder="From Date">
-                    <input type="date" id="activityDateTo" placeholder="To Date">
-                    <button class="btn btn-secondary" onclick="filterActivity()">
-                        <i class="fas fa-filter"></i> Filter
-                    </button>
-                    <button class="btn btn-secondary" onclick="exportActivity()">
-                        <i class="fas fa-download"></i> Export
+            <!-- Categories Tab -->
+            <div id="categories" class="tab-content">
+                <div class="tab-header">
+                    <h2>Space Categories Management</h2>
+                    <button class="btn btn-primary" id="addCategoryBtn">
+                        <i class="fas fa-plus"></i> Add Category
                     </button>
                 </div>
                 <div class="table-container">
-                    <table id="activityTable">
+                    <table id="categoriesTable" class="admin-table">
                         <thead>
                             <tr>
-                                <th>Date/Time</th>
-                                <th>Action</th>
+                                <th>Category Name</th>
+                                <th>Description</th>
+                                <th>Usage Count</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Categories will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Companies Tab -->
+            <div id="companies" class="tab-content">
+                <div class="tab-header">
+                    <h2>Companies/Contractors Management</h2>
+                    <button class="btn btn-primary" id="addCompanyBtn">
+                        <i class="fas fa-plus"></i> Add Company
+                    </button>
+                </div>
+                <div class="table-container">
+                    <table id="companiesTable" class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Company Name</th>
+                                <th>Contact Info</th>
+                                <th>Usage Count</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Companies will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+
+            <!-- Activity Log Tab -->
+            <div id="activity" class="tab-content">
+                <div class="tab-header">
+                    <h2>Activity Log</h2>
+                    <button class="btn btn-secondary" onclick="adminPanel.clearActivityLog()">
+                        <i class="fas fa-trash"></i> Clear Log
+                    </button>
+                </div>
+                <div class="table-container">
+                    <table id="activityTable" class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
                                 <th>User</th>
+                                <th>Action</th>
                                 <th>Details</th>
                                 <th>Status</th>
                             </tr>
                         </thead>
-                        <tbody id="activityTableBody">
-                            <!-- Populated by JavaScript -->
+                        <tbody>
+                            <!-- Activity will be loaded here -->
                         </tbody>
                     </table>
                 </div>
@@ -161,141 +214,37 @@
 
             <!-- Settings Tab -->
             <div id="settings" class="tab-content">
-                <h2>System Settings</h2>
+                <h2>Settings</h2>
                 <div class="settings-grid">
                     <div class="setting-card">
-                        <h3>General Settings</h3>
-                        <div class="setting-item">
-                            <label>Default Campus:</label>
-                            <select id="defaultCampus">
-                                <!-- Populated by JavaScript -->
-                            </select>
-                        </div>
-                        <div class="setting-item">
-                            <label>Max Staging Area (sq ft):</label>
-                            <input type="number" id="maxStagingArea" value="100000">
-                        </div>
-                        <div class="setting-item">
-                            <label>Request Approval Required:</label>
-                            <input type="checkbox" id="approvalRequired">
+                        <h3>Database Settings</h3>
+                        <p>Database connection status and configuration</p>
+                        <div class="setting-status">
+                            <span class="status-indicator" id="dbStatus">Connected</span>
                         </div>
                     </div>
                     <div class="setting-card">
-                        <h3>Email Notifications</h3>
-                        <div class="setting-item">
-                            <label>Admin Email:</label>
-                            <input type="email" id="adminEmail" placeholder="admin@company.com">
-                        </div>
-                        <div class="setting-item">
-                            <label>Notify on New Request:</label>
-                            <input type="checkbox" id="notifyNewRequest" checked>
-                        </div>
-                        <div class="setting-item">
-                            <label>Notify on Approval:</label>
-                            <input type="checkbox" id="notifyApproval" checked>
-                        </div>
+                        <h3>Export Settings</h3>
+                        <p>Configure data export options</p>
+                        <button class="btn btn-secondary">Configure</button>
                     </div>
                     <div class="setting-card">
-                        <h3>Data Management</h3>
-                        <div class="setting-item">
-                            <button class="btn btn-warning" onclick="backupData()">
-                                <i class="fas fa-download"></i> Backup Data
-                            </button>
-                        </div>
-                        <div class="setting-item">
-                            <button class="btn btn-danger" onclick="clearOldData()">
-                                <i class="fas fa-trash"></i> Clear Old Data
-                            </button>
-                        </div>
+                        <h3>Backup Settings</h3>
+                        <p>Manage data backup and restore</p>
+                        <button class="btn btn-secondary">Backup Now</button>
                     </div>
-                </div>
-                <div class="action-bar">
-                    <button class="btn btn-primary" onclick="saveSettings()">
-                        <i class="fas fa-save"></i> Save Settings
-                    </button>
                 </div>
             </div>
         </main>
     </div>
 
-    <!-- Modals -->
-    <!-- Add Campus Modal -->
-    <div id="addCampusModal" class="modal">
-        <div class="modal-content">
-            <span class="close" onclick="closeModal('addCampusModal')">&times;</span>
-            <h2>Add Campus</h2>
-            <form id="addCampusForm">
-                <div class="form-group">
-                    <label>Campus Name:</label>
-                    <input type="text" id="campusName" required>
-                </div>
-                <div class="form-group">
-                    <label>Latitude:</label>
-                    <input type="number" id="campusLat" step="any" required>
-                </div>
-                <div class="form-group">
-                    <label>Longitude:</label>
-                    <input type="number" id="campusLng" step="any" required>
-                </div>
-                <div class="form-group">
-                    <label>Zoom Level:</label>
-                    <input type="number" id="campusZoom" min="10" max="20" value="16" required>
-                </div>
-                <div class="form-group">
-                    <label>Status:</label>
-                    <select id="campusStatus">
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                    </select>
-                </div>
-                <div class="form-actions">
-                    <button type="submit" class="btn btn-primary">Add Campus</button>
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('addCampusModal')">Cancel</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Add Contractor Modal -->
-    <div id="addContractorModal" class="modal">
-        <div class="modal-content">
-            <span class="close" onclick="closeModal('addContractorModal')">&times;</span>
-            <h2>Add Contractor</h2>
-            <form id="addContractorForm">
-                <div class="form-group">
-                    <label>Company Name:</label>
-                    <input type="text" id="contractorName" required>
-                </div>
-                <div class="form-group">
-                    <label>Contact Person:</label>
-                    <input type="text" id="contactPerson">
-                </div>
-                <div class="form-group">
-                    <label>Email:</label>
-                    <input type="email" id="contactEmail">
-                </div>
-                <div class="form-group">
-                    <label>Phone:</label>
-                    <input type="tel" id="contactPhone">
-                </div>
-                <div class="form-group">
-                    <label>Status:</label>
-                    <select id="contractorStatus">
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                    </select>
-                </div>
-                <div class="form-actions">
-                    <button type="submit" class="btn btn-primary">Add Contractor</button>
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('addContractorModal')">Cancel</button>
-                </div>
-            </form>
-        </div>
-    </div>
+    <!-- Modals will be added here -->
+    <div id="modalContainer"></div>
 
     <!-- Scripts -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="admin-script.js"></script>
 </body>
 </html>

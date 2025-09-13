@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Staging Space Request Tool</title>
+    <title>Construction Space Management Tool</title>
     
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -11,31 +11,56 @@
     
     <!-- Custom CSS -->
     <link rel="stylesheet" href="styles.css" />
+    
+    <!-- Supabase -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 </head>
 <body>
     <div class="container">
         <!-- Header -->
         <header class="header">
             <div class="header-content">
-                <h1>Staging Space Request Tool</h1>
-                <p>Select your campus and draw your requested staging area on the map below</p>
-                <a href="admin.html" class="admin-link" onclick="openAdminPanel(event)">
-                    <i class="fas fa-cog"></i> Admin Panel
-                </a>
+                <h1>Project Space Planning Tool</h1>
+                <p>Select your project and draw your requested space area on the map below</p>
+                <div class="header-buttons">
+                    <a href="logistics-map.html" class="admin-link logistics-link">
+                        <i class="fas fa-map"></i> Logistics Map
+                    </a>
+                    <a href="admin.html" class="admin-link" onclick="openAdminPanel(event)">
+                        <i class="fas fa-cog"></i> Admin Panel
+                    </a>
+                </div>
             </div>
         </header>
+
 
         <!-- Main Content -->
         <main class="main-content">
             <!-- Form Panel -->
             <div class="form-panel">
                 <div class="form-section">
-                    <h3>Request Details</h3>
+                    <h3>Space Details</h3>
                     
                     <div class="form-group">
-                        <label for="campusSelect">Campus *</label>
-                        <select id="campusSelect" required>
-                            <option value="">Select campus</option>
+                        <label for="projectSelect">Project *</label>
+                        <select id="projectSelect" required>
+                            <option value="">Select project</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="projectPhases">Project Phases *</label>
+                        <div id="projectPhases" class="phase-checkboxes">
+                            <div class="phase-loading">Loading phases...</div>
+                        </div>
+                        <small class="form-help">Select one or more phases for this space</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="spaceCategory">Space Category *</label>
+                        <select id="spaceCategory" required>
+                            <option value="">Select space type</option>
+                            <!-- Options will be populated from database -->
                         </select>
                     </div>
                     
@@ -46,34 +71,16 @@
                         </select>
                     </div>
                     
-                    <div class="form-group">
-                        <label for="contactName">Contact Name *</label>
-                        <input type="text" id="contactName" required placeholder="Enter contact name">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="contactEmail">Contact Email *</label>
-                        <input type="email" id="contactEmail" required placeholder="Enter contact email">
-                    </div>
                     
                     <div class="form-group">
                         <label for="requestedArea">Requested Area (sq ft)</label>
                         <input type="number" id="requestedArea" placeholder="Estimated square footage">
                     </div>
                     
-                    <div class="form-group">
-                        <label for="startDate">Start Date *</label>
-                        <input type="date" id="startDate" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="endDate">End Date *</label>
-                        <input type="date" id="endDate" required>
-                    </div>
                     
                     <div class="form-group">
                         <label for="description">Description</label>
-                        <textarea id="description" rows="3" placeholder="Describe your staging needs, equipment, materials, etc."></textarea>
+                        <textarea id="description" rows="3" placeholder="Describe your space requirements, equipment, materials, access needs, or special considerations..."></textarea>
                     </div>
                 </div>
             </div>
@@ -103,11 +110,14 @@
 
         <!-- Action Buttons -->
         <div class="action-buttons">
-            <button id="submitRequest" class="btn btn-primary" disabled>
-                Submit Staging Request
+            <button id="saveSpace" class="btn btn-success" disabled>
+                Save Space
             </button>
             <button id="previewRequest" class="btn btn-secondary">
-                Preview Request
+                Preview Space
+            </button>
+            <button id="submitRequest" class="btn btn-primary" disabled>
+                Export Project Spaces
             </button>
         </div>
 

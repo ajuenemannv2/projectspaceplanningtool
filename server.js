@@ -1,9 +1,13 @@
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
-const url = require('url');
+import http from 'http';
+import fs from 'fs';
+import path from 'path';
+import url from 'url';
+import { fileURLToPath } from 'url';
 
-const PORT = process.env.PORT || 3000;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const PORT = 3000;
 
 const mimeTypes = {
     '.html': 'text/html',
@@ -23,9 +27,6 @@ const mimeTypes = {
     '.wasm': 'application/wasm'
 };
 
-// Get the directory where this script is located
-const __dirname = path.resolve();
-
 const server = http.createServer((req, res) => {
     console.log(`${req.method} ${req.url}`);
 
@@ -38,16 +39,9 @@ const server = http.createServer((req, res) => {
         pathname = '/index.html';
     }
 
-    // Get file path - use path.resolve for cross-platform compatibility
-    const filePath = path.resolve(__dirname, pathname.substring(1));
+    // Get file path
+    const filePath = path.join(__dirname, pathname);
     const extname = path.extname(filePath).toLowerCase();
-
-    // Security check: prevent directory traversal
-    if (!filePath.startsWith(__dirname)) {
-        res.writeHead(403, { 'Content-Type': 'text/html' });
-        res.end('<h1>403 - Forbidden</h1>');
-        return;
-    }
 
     // Set content type
     const contentType = mimeTypes[extname] || 'application/octet-stream';
@@ -57,12 +51,10 @@ const server = http.createServer((req, res) => {
         if (err) {
             if (err.code === 'ENOENT') {
                 // File not found
-                console.error(`File not found: ${filePath}`);
                 res.writeHead(404, { 'Content-Type': 'text/html' });
                 res.end('<h1>404 - File Not Found</h1>');
             } else {
                 // Server error
-                console.error(`Server error: ${err.message}`);
                 res.writeHead(500, { 'Content-Type': 'text/html' });
                 res.end('<h1>500 - Internal Server Error</h1>');
             }
@@ -74,18 +66,9 @@ const server = http.createServer((req, res) => {
     });
 });
 
-server.listen(PORT, () => {
-    console.log(`🚀 Server running at http://localhost:${PORT}/`);
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Construction Space Management Tool running at http://localhost:${PORT}/`);
+    console.log(`🌐 Network accessible at: http://YOUR_IP_ADDRESS:${PORT}/`);
     console.log(`📁 Serving files from: ${__dirname}`);
-    console.log(`🌐 Open your browser and go to: http://localhost:${PORT}/`);
-    console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
-});
-
-// Handle graceful shutdown
-process.on('SIGINT', () => {
-    console.log('\n🛑 Shutting down server...');
-    server.close(() => {
-        console.log('✅ Server closed');
-        process.exit(0);
-    });
+    console.log(`💡 For Teams sharing, use the network URL above`);
 });

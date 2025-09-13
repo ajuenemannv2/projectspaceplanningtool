@@ -1,0 +1,5 @@
+---
+description: Always look at the code from a far back point off view when adressing an error, dont just try to solve the first issue visible, identify all issues and then take action, That means look at the whole thing then act. 
+globs:
+alwaysApply: true
+---

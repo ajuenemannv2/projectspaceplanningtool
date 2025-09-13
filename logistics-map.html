@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logistics Map - Project Space Planning Tool</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+    <link rel="stylesheet" href="logistics-styles.css" />
+</head>
+<body>
+    <div class="logistics-container">
+        <!-- Header -->
+        <header class="logistics-header">
+            <div class="header-left">
+                <h1><i class="fas fa-map"></i> Logistics Map</h1>
+                <p>Project Space Planning & Presentation View</p>
+            </div>
+            <div class="header-right">
+                <button class="btn btn-secondary" onclick="window.location.href='index.html'">
+                    <i class="fas fa-arrow-left"></i> Back to Tool
+                </button>
+                <button class="btn btn-secondary" onclick="window.location.href='admin.html'">
+                    <i class="fas fa-cog"></i> Admin Panel
+                </button>
+            </div>
+        </header>
+
+        <!-- Controls -->
+        <div class="logistics-controls">
+            <div class="control-group">
+                <label for="projectSelect">Project:</label>
+                <select id="projectSelect" class="form-control">
+                    <option value="">Select Project</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>Phases:</label>
+                <div id="phaseCheckboxes" class="phase-checkboxes">
+                    <!-- Phase checkboxes will be populated here -->
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="mapTypeSelect">Map Type:</label>
+                <select id="mapTypeSelect" class="form-control">
+                    <option value="street">Street View</option>
+                    <option value="satellite" selected>Satellite</option>
+                    <option value="hybrid">Hybrid</option>
+                </select>
+            </div>
+            <div class="export-controls">
+                <button class="btn btn-success" id="exportDataBtn">
+                    <i class="fas fa-download"></i> Export Data
+                </button>
+                <button class="btn btn-primary" id="exportHDImageBtn">
+                    <i class="fas fa-camera"></i> Export HD Image
+                </button>
+            </div>
+        </div>
+
+        <!-- Map Container -->
+        <div class="map-container">
+            <div id="logisticsMap" class="full-screen-map"></div>
+            <div id="mapInfo" class="map-info">
+                <span id="spaceCount">0 spaces</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="logistics-script.js"></script>
+</body>
+</html>
