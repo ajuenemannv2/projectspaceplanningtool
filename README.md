@@ -28,13 +28,27 @@ A modern web-based drawing tool for construction contractors to request staging 
 └─────────────────┘    └──────────────────┘    └─────────────────┘
 ```
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Vite Build)
 
 ### 1. Local Development Setup
 
-1. **Clone or download** the project files to your local machine
-2. **Open** `index.html` in a web browser
-3. **Test** the drawing functionality and form validation
+1. Install Node 18+.
+2. `npm install`
+3. `npm run dev` → opens Vite dev server.
+4. Pages:
+   - `/index.html` (main tool)
+   - `/logistics-map.html` (logistics)
+   - `/admin.html` (admin)
+
+### 2. Build for Deployment (Power Pages)
+
+1. `npm run build` → outputs static files to `dist/`.
+2. Upload contents of `dist/` as Web Files into Power Pages (preserve folder structure), or host on your organization’s static hosting/CDN.
+3. Reference the built HTML in your Power Pages content.
+
+Notes:
+- Vite config uses `base: './'` for relative asset paths, compatible with Power Pages.
+- Supabase is still loaded from CDN; consider bundling via modules in a future pass.
 
 ### 2. Power Platform Integration
 
@@ -102,6 +116,23 @@ const CONFIG = {
         // Your site layout GeoJSON data
     }
 };
+```
+
+### Environment Variables
+
+For production, prefer build-time env vars rather than hardcoding keys:
+
+Create `.env` (never commit secrets):
+
+```
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+```
+
+Then in code (future modularization pass):
+
+```js
+const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY)
 ```
 
 ### Site Layout Setup
