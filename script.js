@@ -176,26 +176,30 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Show loading animation
     showLoadingAnimation();
-    // Global error banner elements
-    const errorBanner = document.getElementById('globalErrorBanner');
-    const errorText = document.getElementById('globalErrorText');
-    const errorRetry = document.getElementById('globalErrorRetry');
-    const errorDismiss = document.getElementById('globalErrorDismiss');
+    // Global error banner (delegate to ToolUI when available)
+    if (window.ToolUI && typeof window.ToolUI.initGlobalErrorBanner === 'function') {
+        try { window.ToolUI.initGlobalErrorBanner(); } catch(_) {}
+    }
     function showError(message, retryFn) {
-        if (errorText) errorText.textContent = message || 'An error occurred.';
-        if (errorBanner) errorBanner.style.display = 'block';
-        if (errorRetry) {
-            errorRetry.onclick = () => {
-                hideError();
-                try { retryFn && retryFn(); } catch(_) {}
-            };
+        if (window.ToolUI && typeof window.ToolUI.showError === 'function') {
+            return window.ToolUI.showError(message, retryFn);
         }
-        if (errorDismiss) {
-            errorDismiss.onclick = hideError;
-        }
+        // Fallback minimal behavior if ToolUI not loaded
+        const banner = document.getElementById('globalErrorBanner');
+        const text = document.getElementById('globalErrorText');
+        const retry = document.getElementById('globalErrorRetry');
+        const dismiss = document.getElementById('globalErrorDismiss');
+        if (text) text.textContent = message || 'An error occurred.';
+        if (banner) banner.style.display = 'block';
+        if (retry) retry.onclick = function(){ hideError(); try { retryFn && retryFn(); } catch(_) {} };
+        if (dismiss) dismiss.onclick = hideError;
     }
     function hideError() {
-        if (errorBanner) errorBanner.style.display = 'none';
+        if (window.ToolUI && typeof window.ToolUI.hideError === 'function') {
+            return window.ToolUI.hideError();
+        }
+        const banner = document.getElementById('globalErrorBanner');
+        if (banner) banner.style.display = 'none';
     }
     
     try {
@@ -246,7 +250,14 @@ document.addEventListener('DOMContentLoaded', async function() {
             const targetKey = (savedProject && PROJECTS[savedProject]) ? savedProject : firstKey;
             projectSelect.value = targetKey;
             try { navigateToProject(targetKey); } catch(_) {}
-            updateCurrentProjectBanner(targetKey);
+            try {
+                const proj = PROJECTS[targetKey];
+                if (window.ToolUI && typeof window.ToolUI.setCurrentProjectName === 'function') {
+                    window.ToolUI.setCurrentProjectName(proj && proj.name);
+                } else {
+                    updateCurrentProjectBanner(targetKey);
+                }
+            } catch(_) {}
             // Apply zoom override if provided
             if (savedZoom && map) {
                 const z = parseInt(savedZoom, 10);
@@ -312,8 +323,12 @@ function initializeMap() {
     // Auto-switch between satellite/hybrid and street view based on zoom level
     map.on('zoomend', function() {
         const currentZoom = map.getZoom();
-        const currentLayer = map.hasLayer(satelliteLayer) ? 'satellite' : (map.hasLayer(hybridLayer) ? 'hybrid' : 'street');
-        const switchZoom = CONFIG?.streetSwitchZoom ?? 15; // lower => switch to street earlier (more zoomed out)
+        const switchZoom = (window.ToolMap && typeof window.ToolMap.getSwitchZoom === 'function') 
+            ? window.ToolMap.getSwitchZoom() 
+            : (CONFIG?.streetSwitchZoom ?? 15);
+        const currentLayer = (window.ToolMap && typeof window.ToolMap.currentBase === 'function')
+            ? window.ToolMap.currentBase(map, satelliteLayer, hybridLayer)
+            : (map.hasLayer(satelliteLayer) ? 'satellite' : (map.hasLayer(hybridLayer) ? 'hybrid' : 'street'));
         
         // If we're on street view and zooming in beyond threshold, switch to satellite
         if (currentLayer === 'street' && currentZoom > switchZoom) {
