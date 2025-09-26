@@ -296,7 +296,9 @@ function initializeMap() {
     // Create map instance with higher max zoom
     map = L.map('map', {
         maxZoom: 22,
-        minZoom: 10
+        minZoom: 10,
+        preferCanvas: true,
+        renderer: L.canvas({ padding: 1.0 }) // expanded padding (~2x) to further reduce edge clipping
     }).setView(CONFIG.defaultCenter, CONFIG.defaultZoom);
     
     // Base layers
