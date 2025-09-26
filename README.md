@@ -1,97 +1,122 @@
-# 🏗️ Staging Space Request Tool
+# Project Space Planning Tool
 
-A modern web-based drawing tool for construction contractors to request staging space through Microsoft Power Platform integration. Built with Leaflet.js for geospatial drawing and designed to work seamlessly with Power Pages, Power Automate, and Power BI. Configured specifically for the Intel Ronler Acres Campus in Hillsboro, Oregon, starting at Gordon Moore Park.
+A simple, field-friendly web app to plan and communicate construction site spaces. It helps General Contractors, Superintendents, and Trade Partners lay out trailers, staging, cranes, and fencing by project phase and share a clear picture with Logistics and Power BI reports.
 
-## 📋 Features
+## What you can plan
+- Job Trailers and Offices (rotatable, scale-as-rectangle)
+- Staging / Laydown Areas (materials, steel, concrete)
+- Cranes (pad, radius, swing/sweep)
+- Fencing / Barricades (temporary or permanent)
+- Utility/Work Zones and other site areas
 
-- **Interactive Drawing**: Draw rectangles and polygons on a site layout map
-- **Form Validation**: Comprehensive form validation with real-time feedback
-- **Power Platform Integration**: Seamless integration with Power Automate and SharePoint
-- **Responsive Design**: Works on desktop and mobile devices
-- **Modern UI**: Power Platform-inspired design with smooth animations
-- **TopoJSON Export**: Exports drawn shapes in TopoJSON format compatible with Power BI, maintaining the original construction campus data structure
-- **Email Notifications**: Automatic email confirmations and notifications
+## Who uses this
+- GC/Project Teams: plan and approve site use by phase
+- Trades/Subcontractors: request space and coordinate needs
+- Logistics/Safety: visualize the live site plan (Logistics Map) and export HD images for meetings, signage, and plans
 
-## 🧭 Documentation for reviewers
-- See `docs/architecture.md` for a high-level view.
-- See `docs/config.md` for configuration.
-- See `docs/operations.md` for local run and deployment.
-- See `docs/troubleshooting.md` for common issues.
+## How it’s used (day-to-day)
+1) Pick the Project and Phase
+- Choose the active project and one or more phases (e.g., Precon, Excavation, Structure). Saved shapes for the selected phases appear.
 
-## 🏗️ Architecture
+2) Draw the Space
+- Select a category (Job Trailer, Staging Area, Crane, Fence, etc.) and draw on the map:
+  - Rectangle for trailers/offices (rotate to match site roads; scale by width/height handles while staying rectangular)
+  - Polygon for irregular staging areas
+  - Fence (yellow line) to outline perimeters or barricades
+  - Crane pad and swing/radius to communicate no‑fly and reach zones
+- Segment lengths and area display while you adjust.
 
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Power Pages   │───▶│  Power Automate  │───▶│   SharePoint    │
-│   (Frontend)    │    │   (Backend)      │    │   (Storage)     │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-         │                       │                       │
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Leaflet.js    │    │   Email Flow     │    │   Power BI      │
-│   (Drawing)     │    │   (Notifications)│    │   (Visualization)│
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-```
+3) Tag it
+- Set the company/trade so a watermark appears on the shape. Optionally add a description (duration, access, constraints).
 
-## 🚀 Quick Start
+4) Save
+- Space persists to the project. Optionally serialize and append to a project JSON to feed a Power BI Shape Map (see below).
 
-### 1. Local Development Setup
+5) Share and Review
+- Open the Logistics Map for a read‑only view with the same project/phase selection.
+- Export HD images (logos/watermarks on top) for coordination meetings and signage.
 
-1. **Clone or download** the project files to your local machine
-2. **Open** `index.html` in a web browser
-3. **Test** the drawing functionality and form validation
+6) Adjust as the site changes
+- Move/rotate/resize rectangles without breaking right angles.
+- Edit polygons and fences as space needs evolve.
+- Phase filters keep the view clean through the project lifecycle.
 
-### 2. Power Platform Integration
+## How it fits into planning
+- Phase‑aware: filter by project phases to phase in/out space use
+- Trade‑tagged: company watermark on shapes for clarity in the field
+- Map continuity: project/zoom/phases carry across Tool ↔ Logistics Map
+- Layer control: Street/Hybrid/Satellite to match the level of site detail
 
-#### Step 1: Create Power Automate Flow
+## Power BI shape map pipeline (optional)
+- On save, the app can serialize shapes (GeoJSON/TopoJSON) and append them to a per‑project JSON file (SharePoint/Blob/etc.).
+- Power BI Shape Map reads that JSON. With scheduled/on‑demand refresh, new site shapes flow into reports without manual redraws.
+- If you want this enabled, we’ll point the app to a write location (e.g., via Power Automate or a small API) and switch it on.
 
-1. **Go to** [Power Automate](https://flow.microsoft.com)
-2. **Create** a new flow with HTTP trigger
-3. **Import** the flow configuration from `power-automate-flow.json`
-4. **Configure** the following connections:
-   - SharePoint connection
-   - Office 365 Outlook connection
-5. **Update** the SharePoint site URL and document library paths
-6. **Save** and **test** the flow
+## Typical workflows
+- Job Trailer: rotate the rectangle to align with roads, scale footprint, tag the company, save, share via Logistics Map.
+- Crane: place pad, set radius/swing to show reach/no‑fly, tag the operator, export HD image for lift plan packet.
+- Staging/Laydown: draw polygons, tag the trade (steel, concrete), phase‑filter for “next week,” export visuals for the weekly coordination meeting.
+- Perimeter/Fence: trace fence lines (yellow), communicate access restrictions and reroutes alongside trailers and staging.
 
-#### Step 2: Set Up SharePoint Storage
+## Admin (lightweight)
+- Projects
+  - Create/edit projects with name, status, and map‑based location.
+  - Pick the site location on the embedded map; center/zoom are saved and used as the default view in the Tool and Logistics Map.
+  - Typical: stand up a new job, point the map to the site, set zoom, mark active.
+- Phases
+  - Define phases in project order (e.g., Precon → Excavation → Structure → Interiors).
+  - Edit names and re‑order easily.
+  - Dates (planned/in‑progress): captured per phase (UI scaffolded; final wiring to be completed).
+  - Typical: set/update the phase list so field teams can filter “now/next” and Logistics can export phase‑specific views.
+- Categories & Companies
+  - Categories: add/rename (Job Trailer, Staging Area, Crane, Fence), set category colors so shapes are consistently color‑coded.
+  - Companies: add trades and set the short display label (watermark) printed on shapes and exports.
+  - Typical: onboard trades, tweak colors for clarity, ensure clean labels for signage and reports.
+- Practical outcomes
+  - Tool menus reflect Admin categories/companies.
+  - Shape colors follow category color settings.
+  - Company labels watermark saved shapes.
+  - Phase order/dates (when finalized) support “what’s active now vs. next” filtering and reporting.
 
-1. **Create** a SharePoint document library (if not exists)
-2. **Upload** an initial `staging-requests.json` file:
+## File Structure (high‑level)
+- index.html
+  - Main Tool page contractors use to draw, tag (company/trade), and save site spaces.
+- logistics-map.html
+  - Read‑only site plan for Logistics/Safety; includes HD image export for meetings and signage.
+- admin.html
+  - Admin console to manage projects (center/zoom), phases, categories, and companies.
+- styles.css, admin-styles.css, logistics-styles.css
+  - Global and page‑specific styles; consistent buttons, banners, tables, and map headers.
+- config/public-supabase-config.js
+  - Public Supabase URL and anon key consumed by the browser (public‑safe; governed by RLS/CORS).
+- src/core/
+  - config.js: runtime toggles (e.g., map auto‑switch zoom, debug logging)
+  - supabase-client.js: central, safe Supabase client getter with readiness checks
+  - logger.js: toggleable, structured console logger
+  - types.js: JSDoc typedefs for Projects, Phases, Spaces, Categories, Companies
+- src/tool/ (Main Tool)
+  - ui/: banners (global error), status indicator, undo state, modals (wrappers)
+  - map/: base layer creation/auto‑switch, map reset helpers
+  - data/: projects/phases/selection/spaces; restores project/zoom/phases across pages
+  - drawing/: thin wrappers for drawing controls (primary logic in script.js)
+  - export/: TopoJSON export (Power BI compatibility)
+- src/logistics/
+  - phases.js, spaces.js: load/filter for display only; ui.js for counts/loading; export.js for HD image export
+- src/admin/
+  - data.js: load/save projects, phases, categories, companies; ui.js: render tables/tabs
+- script.js
+  - Main Tool engine: map init, drawing, labels, rotated‑rectangle rotate/scale, save to DB, selection persistence
+- logistics-script.js
+  - Logistics engine: phase filter, space rendering, watermarks, HD export
+- admin-script.js
+  - Admin engine: tables, add/edit modals, Supabase CRUD, search/autocomplete for project placement
+- docs/
+  - IT_SETUP.md (dev server + ZIP), architecture.md, operations.md, config.md, troubleshooting.md, PR_SUMMARY.md
 
-```json
-{
-  "requests": [],
-  "lastUpdated": "2024-01-01T00:00:00Z"
-}
-```
-
-#### Step 3: Configure Power Pages
-
-1. **Create** a new Power Pages site
-2. **Upload** the HTML, CSS, and JS files
-3. **Configure** the Power Automate webhook URL in `script.js`
-4. **Set up** authentication and permissions
-
-#### Step 4: Power BI Integration
-
-1. **Create** a new Power BI report
-2. **Connect** to the SharePoint JSON file
-3. **Use** the Shape Map visual to display staging areas
-4. **Configure** refresh settings
-
-## 📁 File Structure
-
-```
-staging-space-tool/
-├── index.html              # Main HTML file
-├── styles.css              # CSS styling
-├── script.js               # JavaScript functionality
-├── power-automate-flow.json # Power Automate configuration
-├── README.md               # This file
-└── sample-site-layout.json # Sample site layout (optional)
-```
+## Handoff to IT (short)
+- Provide a ZIP of the static files and point to `docs/IT_SETUP.md` for local dev server and packaging steps.
+- Include your Supabase URL + anon key in `config/public-supabase-config.js` or ship placeholders for their own database.
+- Add their dev/host origins to Supabase Allowed Origins so the browser can call the database.
 
 ## ⚙️ Configuration
 
@@ -142,28 +167,8 @@ Example site layout:
 }
 ```
 
-## 🔧 Customization
-
-### Adding New Form Fields
-
-1. **Add** the HTML field in `index.html`
-2. **Update** the validation in `script.js`
-3. **Modify** the Power Automate flow schema
-4. **Update** the email templates
-
-### Customizing the Map
-
-1. **Change** the tile layer URL for different map styles
-2. **Modify** the drawing tool colors and styles
-3. **Add** custom markers or overlays
-4. **Implement** additional map controls
-
-### Styling Changes
-
-1. **Modify** `styles.css` for visual changes
-2. **Update** color scheme to match your brand
-3. **Adjust** responsive breakpoints
-4. **Customize** animations and transitions
+---
+Built for construction teams to quickly visualize, coordinate, and communicate site space by phase—without heavy CAD work or slow redraw cycles.
 
 ## 📊 Power BI Integration
 
