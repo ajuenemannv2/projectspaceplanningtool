@@ -5,9 +5,8 @@
   "description": "Web-based drawing tool for construction contractors to request staging space",
   "main": "server.js",
   "scripts": {
-    "start": "vite preview --port 4173",
-    "dev": "vite",
-    "build": "vite build",
+    "start": "node server.js",
+    "dev": "node server.js",
     "test:db": "node test-database.js"
   },
   "keywords": [
@@ -21,8 +20,5 @@
   "license": "MIT",
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4"
-  },
-  "devDependencies": {
-    "vite": "^7.1.7"
   }
 }
