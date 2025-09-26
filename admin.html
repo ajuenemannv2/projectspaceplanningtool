@@ -262,5 +262,11 @@
     <script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="admin-script.js"></script>
+    <script>
+        // Non-invasive wrapper usage: ensure tables are up-to-date after init
+        document.addEventListener('DOMContentLoaded', function(){
+            try { if (window.AdminUI && typeof window.AdminUI.updateProjectsTable === 'function') window.AdminUI.updateProjectsTable(); } catch(_){}
+        });
+    </script>
 </body>
 </html>

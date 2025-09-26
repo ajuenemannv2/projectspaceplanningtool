@@ -105,7 +105,9 @@ class LogisticsMap {
             zoomControl: true,
             attributionControl: true,
             maxZoom: 22,
-            minZoom: 10
+            minZoom: 10,
+            preferCanvas: true,
+            renderer: L.canvas({ padding: 1.0 })
         }).setView([45.5442515697061, -122.91389689455964], 16);
 
         // Add default tile layer (satellite view)
