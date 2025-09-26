@@ -867,12 +867,21 @@ class AdminPanelDatabase {
     // Dashboard
     async updateDashboard() {
         try {
+            // If dashboard UI is not present, exit safely
+            const totalProjectsEl = document.getElementById('totalProjects');
+            const activeProjectsEl = document.getElementById('activeProjects');
+            const totalPhasesEl = document.getElementById('totalPhases');
+            const totalSpacesEl = document.getElementById('totalSpaces');
+            if (!totalProjectsEl || !activeProjectsEl || !totalPhasesEl || !totalSpacesEl) {
+                return;
+            }
+
             // Update project count
             const totalProjects = this.projects.length;
             const activeProjects = this.projects.filter(p => p.status === 'active').length;
             
-            document.getElementById('totalProjects').textContent = totalProjects;
-            document.getElementById('activeProjects').textContent = activeProjects;
+            totalProjectsEl.textContent = totalProjects;
+            activeProjectsEl.textContent = activeProjects;
             
             // Update total phases count
             let totalPhases = 0;
@@ -883,7 +892,7 @@ class AdminPanelDatabase {
                     .eq('project_id', project.id);
                 totalPhases += phases ? phases.length : 0;
             }
-            document.getElementById('totalPhases').textContent = totalPhases;
+            totalPhasesEl.textContent = totalPhases;
             
             // Update total spaces count
             let totalSpaces = 0;
@@ -894,7 +903,7 @@ class AdminPanelDatabase {
                     .eq('project_id', project.id);
                 totalSpaces += spaces ? spaces.length : 0;
             }
-            document.getElementById('totalSpaces').textContent = totalSpaces;
+            totalSpacesEl.textContent = totalSpaces;
             
         } catch (error) {
             console.error('Error updating dashboard:', error);
@@ -1436,8 +1445,8 @@ class AdminPanelDatabase {
         console.log('🔧 Form handlers setup complete');
     }
 
-    showAddPhaseModal(projectId = null) {
-        console.log('🔧 Creating phase modal for project:', projectId);
+    showAddPhaseModal(projectId = null, phase = null) {
+        console.log('🔧 Creating phase modal for project:', projectId, 'phase:', phase);
         
         const container = document.getElementById('modalContainer');
         container.innerHTML = '';
@@ -1497,7 +1506,7 @@ class AdminPanelDatabase {
         `;
         
         container.appendChild(modal);
-        this.setupPhaseFormHandlers();
+        this.setupPhaseFormHandlers(phase ? phase.id : null);
     }
 
     showAddSpaceModal() {
@@ -1641,10 +1650,24 @@ class AdminPanelDatabase {
                     <label for="projectName" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Project Name *</label>
                     <input type="text" id="projectName" name="name" value="${project ? project.name : ''}" required style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem;">
                 </div>
+
+                <div class="form-group" style="margin-bottom: 0.5rem;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Find Location</label>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <input type="text" id="projectSearchQuery" placeholder="Search address or place" style="flex: 1; padding: 0.6rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem;">
+                        <button type="button" class="btn btn-secondary" id="projectSearchBtn"><i class="fas fa-search"></i> Find</button>
+                        <button type="button" class="btn btn-secondary" id="projectUseCenterBtn" title="Use map center"><i class="fas fa-crosshairs"></i></button>
+                    </div>
+                    <div id="projectSearchResults" style="display:none; background: white; border: 1px solid #e5e7eb; border-radius: 6px; margin-top: 0.5rem; max-height: 220px; overflow-y: auto; box-shadow: 0 6px 16px rgba(0,0,0,0.08);"></div>
+                    <small style="color: #64748b; font-size: 0.8rem; margin-top: 0.25rem; display: block;">Search or click the map to set coordinates</small>
+                </div>
+
+                <div id="projectMap" style="height: 320px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 1rem;"></div>
+
                 <div class="form-group" style="margin-bottom: 1rem;">
                     <label for="projectCoordinates" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Coordinates (lat, lng) *</label>
                     <input type="text" id="projectCoordinates" placeholder="45.55892367527075, -122.93169330055501" value="${project ? (project.coordinates ? `${project.coordinates[0]}, ${project.coordinates[1]}` : '') : ''}" required style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem;">
-                    <small style="color: #64748b; font-size: 0.8rem; margin-top: 0.25rem; display: block;">Paste coordinates in format: latitude, longitude</small>
+                    <small style="color: #64748b; font-size: 0.8rem; margin-top: 0.25rem; display: block;">Paste or set via map/search</small>
                 </div>
                 <div class="form-group" style="margin-bottom: 1rem;">
                     <label for="projectLatitude" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Latitude (auto-filled)</label>
@@ -1656,7 +1679,7 @@ class AdminPanelDatabase {
                 </div>
                 <div class="form-group" style="margin-bottom: 1rem;">
                     <label for="projectZoom" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Zoom Level</label>
-                    <input type="number" id="projectZoom" name="zoom_level" value="${project ? project.zoom_level : 16}" min="1" max="20" style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem;">
+                    <input type="number" id="projectZoom" name="zoom_level" value="${project ? project.zoom_level : 16}" min="1" max="22" style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem;">
                 </div>
                 <div class="form-group" style="margin-bottom: 1rem;">
                     <label for="projectDescription" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Description</label>
@@ -1936,18 +1959,156 @@ class AdminPanelDatabase {
             const coordinatesInput = document.getElementById('projectCoordinates');
             const latitudeInput = document.getElementById('projectLatitude');
             const longitudeInput = document.getElementById('projectLongitude');
+            const zoomInput = document.getElementById('projectZoom');
+            const mapEl = document.getElementById('projectMap');
+            const searchInput = document.getElementById('projectSearchQuery');
+            const searchBtn = document.getElementById('projectSearchBtn');
+            const useCenterBtn = document.getElementById('projectUseCenterBtn');
+            const resultsEl = document.getElementById('projectSearchResults');
             
             if (coordinatesInput && latitudeInput && longitudeInput) {
                 coordinatesInput.addEventListener('input', (e) => {
                     this.parseCoordinates(e.target.value, latitudeInput, longitudeInput, coordinatesInput);
+                    if (latitudeInput.value && longitudeInput.value) {
+                        this._updateProjectMarker(parseFloat(latitudeInput.value), parseFloat(longitudeInput.value));
+                        if (this._projectMap) this._projectMap.setView([parseFloat(latitudeInput.value), parseFloat(longitudeInput.value)], this._projectMap.getZoom());
+                    }
                 });
                 
                 coordinatesInput.addEventListener('paste', (e) => {
-                    // Small delay to allow paste to complete
                     setTimeout(() => {
                         this.parseCoordinates(e.target.value, latitudeInput, longitudeInput, coordinatesInput);
+                        if (latitudeInput.value && longitudeInput.value) {
+                            this._updateProjectMarker(parseFloat(latitudeInput.value), parseFloat(longitudeInput.value));
+                            if (this._projectMap) this._projectMap.setView([parseFloat(latitudeInput.value), parseFloat(longitudeInput.value)], this._projectMap.getZoom());
+                        }
                     }, 10);
                 });
+            }
+
+            // Initialize map picker
+            if (mapEl) {
+                this._initProjectMap(mapEl, latitudeInput, longitudeInput, coordinatesInput, zoomInput);
+                if (searchBtn) {
+                    searchBtn.addEventListener('click', () => {
+                        if (searchInput && searchInput.value.trim()) {
+                            this._geocodeProjectSearch(searchInput.value.trim(), latitudeInput, longitudeInput, coordinatesInput, zoomInput);
+                        }
+                    });
+                }
+                if (searchInput) {
+                    // Debounced live suggestions with loading and caching
+                    let debounceTimer = null;
+                    let activeIdx = -1;
+                    this._projectSearchResults = [];
+                    this._projectSearchCache = this._projectSearchCache || new Map();
+
+                    const performSuggest = async (q) => {
+                        if (!resultsEl) return;
+                        // Loading indicator
+                        resultsEl.style.display = 'block';
+                        resultsEl.innerHTML = '<div style="padding: 0.5rem 0.75rem; color:#6b7280; font-size:0.9rem;">Searching…</div>';
+
+                        const bounds = this._projectMap ? this._projectMap.getBounds() : null;
+                        const cacheKey = bounds ? `${q}|${bounds.getWest().toFixed(2)},${bounds.getNorth().toFixed(2)},${bounds.getEast().toFixed(2)},${bounds.getSouth().toFixed(2)}` : q;
+                        if (this._projectSearchCache.has(cacheKey)) {
+                            this._projectSearchResults = this._projectSearchCache.get(cacheKey);
+                            activeIdx = -1;
+                            this._renderProjectSearchResults(resultsEl, this._projectSearchResults, q, activeIdx, (item) => {
+                                const lat = parseFloat(item.lat);
+                                const lng = parseFloat(item.lon);
+                                const zoom = 17;
+                                if (this._projectMap) this._projectMap.setView([lat, lng], zoom);
+                                if (latitudeInput) latitudeInput.value = lat.toFixed(7);
+                                if (longitudeInput) longitudeInput.value = lng.toFixed(7);
+                                if (coordinatesInput) coordinatesInput.value = `${lat.toFixed(7)}, ${lng.toFixed(7)}`;
+                                if (zoomInput) zoomInput.value = zoom;
+                                this._updateProjectMarker(lat, lng);
+                                this._clearProjectSearchResults(resultsEl);
+                            });
+                            return;
+                        }
+
+                        const results = await this._searchProjectSuggestions(q, bounds);
+                        this._projectSearchCache.set(cacheKey, results);
+                        this._projectSearchResults = results;
+                        activeIdx = -1;
+                        this._renderProjectSearchResults(resultsEl, results, q, activeIdx, (item) => {
+                            const lat = parseFloat(item.lat);
+                            const lng = parseFloat(item.lon);
+                            const zoom = 17;
+                            if (this._projectMap) this._projectMap.setView([lat, lng], zoom);
+                            if (latitudeInput) latitudeInput.value = lat.toFixed(7);
+                            if (longitudeInput) longitudeInput.value = lng.toFixed(7);
+                            if (coordinatesInput) coordinatesInput.value = `${lat.toFixed(7)}, ${lng.toFixed(7)}`;
+                            if (zoomInput) zoomInput.value = zoom;
+                            this._updateProjectMarker(lat, lng);
+                            this._clearProjectSearchResults(resultsEl);
+                        });
+                    };
+
+                    searchInput.addEventListener('input', () => {
+                        if (!resultsEl) return;
+                        const q = searchInput.value.trim();
+                        if (debounceTimer) clearTimeout(debounceTimer);
+                        if (q.length < 3) {
+                            this._clearProjectSearchResults(resultsEl);
+                            return;
+                        }
+                        debounceTimer = setTimeout(() => performSuggest(q), 200);
+                    });
+
+                    searchInput.addEventListener('keydown', (ev) => {
+                        const results = this._projectSearchResults || [];
+                        if (!resultsEl || results.length === 0 || resultsEl.style.display === 'none') return;
+                        if (ev.key === 'ArrowDown') {
+                            ev.preventDefault();
+                            activeIdx = (activeIdx + 1) % results.length;
+                            this._renderProjectSearchResults(resultsEl, results, searchInput.value.trim(), activeIdx, null);
+                        } else if (ev.key === 'ArrowUp') {
+                            ev.preventDefault();
+                            activeIdx = activeIdx <= 0 ? results.length - 1 : activeIdx - 1;
+                            this._renderProjectSearchResults(resultsEl, results, searchInput.value.trim(), activeIdx, null);
+                        } else if (ev.key === 'Enter') {
+                            if (activeIdx >= 0 && results[activeIdx]) {
+                                ev.preventDefault();
+                                const item = results[activeIdx];
+                                const lat = parseFloat(item.lat);
+                                const lng = parseFloat(item.lon);
+                                const zoom = 17;
+                                if (this._projectMap) this._projectMap.setView([lat, lng], zoom);
+                                if (latitudeInput) latitudeInput.value = lat.toFixed(7);
+                                if (longitudeInput) longitudeInput.value = lng.toFixed(7);
+                                if (coordinatesInput) coordinatesInput.value = `${lat.toFixed(7)}, ${lng.toFixed(7)}`;
+                                if (zoomInput) zoomInput.value = zoom;
+                                this._updateProjectMarker(lat, lng);
+                                this._clearProjectSearchResults(resultsEl);
+                            }
+                        } else if (ev.key === 'Escape') {
+                            this._clearProjectSearchResults(resultsEl);
+                        }
+                    });
+                }
+                if (useCenterBtn) {
+                    useCenterBtn.addEventListener('click', () => {
+                        if (!this._projectMap) return;
+                        const center = this._projectMap.getCenter();
+                        const zoom = this._projectMap.getZoom();
+                        latitudeInput.value = center.lat.toFixed(7);
+                        longitudeInput.value = center.lng.toFixed(7);
+                        if (coordinatesInput) coordinatesInput.value = `${center.lat.toFixed(7)}, ${center.lng.toFixed(7)}`;
+                        if (zoomInput) zoomInput.value = zoom;
+                        this._updateProjectMarker(center.lat, center.lng);
+                    });
+                }
+
+                // Hide results when clicking outside
+                document.addEventListener('click', (ev) => {
+                    if (!resultsEl) return;
+                    if (ev.target === resultsEl || (resultsEl.contains(ev.target))) return;
+                    if (ev.target === searchInput) return;
+                    this._clearProjectSearchResults(resultsEl);
+                }, { capture: true });
             }
         }
     }
@@ -2957,81 +3118,251 @@ class AdminPanelDatabase {
         const brickWall = document.getElementById('brickWall');
         if (!brickWall) return;
 
-        let brickCount = 0;
-        let currentRow = 0;
-        const maxRows = 5;
-        const bricksPerRow = 4;
-        const brickWidth = 40;
-        const brickHeight = 20;
-        const rowOffset = brickWidth / 2; // Half brick offset for alternating rows
+        // Canvas-based, rAF-driven brick animation with drop & pop
+        brickWall.innerHTML = '';
+        const canvas = document.createElement('canvas');
+        canvas.style.width = '200px';
+        canvas.style.height = '240px';
+        const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        canvas.width = 200 * dpr;
+        canvas.height = 240 * dpr;
+        brickWall.appendChild(canvas);
+        const ctx = canvas.getContext('2d');
+        ctx.scale(dpr, dpr);
 
-        const addBrick = () => {
-            if (brickCount >= bricksPerRow * maxRows) {
-                // Reset animation
-                brickCount = 0;
-                currentRow = 0;
-                brickWall.innerHTML = '';
-                setTimeout(addBrick, 500);
+        const rows = 5, perRow = 4, bw = 40, bh = 20, rowOffset = bw/2, total = rows*perRow;
+        const stepMs = 100;      // time between bricks starting
+        const dropMs = 240;      // drop duration per brick
+        const popMs = 120;       // small pop settle
+        const resetDelay = 700;  // pause before restarting
+        const easeOutCubic = t => (--t)*t*t + 1;
+
+        let start = performance.now();
+        function draw(now){
+            const t = now - start;
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            for (let i=0;i<total;i++){
+                const row = Math.floor(i/perRow), col = i%perRow;
+                const x = col*bw + (row%2)*rowOffset;
+                const y = row*bh;
+                const begin = i*stepMs;
+                const local = t - begin;
+                if (local < 0) continue;
+
+                let yy = y - 24;  // start higher for drop
+                let scale = 1;
+                if (local <= dropMs){
+                    const p = easeOutCubic(local/dropMs);
+                    yy = y - (1-p)*24;
+                } else if (local <= dropMs + popMs){
+                    const p = 1 - (local - dropMs)/popMs; // quick settle scale
+                    scale = 1 + 0.06*p;
+                }
+
+                ctx.save();
+                ctx.translate(Math.round(x)+bw/2, Math.round(yy)+bh/2);
+                ctx.scale(scale, scale);
+                ctx.translate(-bw/2, -bh/2);
+                const grad = ctx.createLinearGradient(0,0,bw,bh);
+                grad.addColorStop(0, '#1e40af');
+                grad.addColorStop(1, '#3b82f6');
+                ctx.fillStyle = grad;
+                ctx.strokeStyle = '#172554';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.rect(1,1,bw-2,bh-2);
+                ctx.fill();
+                ctx.stroke();
+                ctx.fillStyle = 'rgba(255,255,255,0.25)';
+                ctx.fillRect(3,4,bw-6,3);
+                ctx.restore();
+            }
+            if (t > total*stepMs + dropMs + resetDelay) start = now;
+            requestAnimationFrame(draw);
+        }
+        requestAnimationFrame(draw);
+    }
+
+    _initProjectMap(mapEl, latitudeInput, longitudeInput, coordinatesInput, zoomInput) {
+        try {
+            const defaultCenter = [
+                latitudeInput && latitudeInput.value ? parseFloat(latitudeInput.value) : 45.5442515697061,
+                longitudeInput && longitudeInput.value ? parseFloat(longitudeInput.value) : -122.91389689455964
+            ];
+            const initialZoom = (zoomInput && parseInt(zoomInput.value)) || 16;
+
+            this._projectMap = L.map(mapEl, {
+                maxZoom: 22,
+                minZoom: 3,
+                renderer: L.canvas({ padding: 0.5 })
+            }).setView(defaultCenter, initialZoom);
+
+            // Base layers
+            const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 22
+            });
+            const satelliteLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                attribution: '© Google Satellite',
+                maxZoom: 22
+            });
+            const hybridLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+                attribution: '© Google Hybrid',
+                maxZoom: 22
+            });
+
+            // Add default base
+            streetLayer.addTo(this._projectMap);
+
+            // Layer control
+            const baseLayers = {
+                'Street': streetLayer,
+                'Hybrid': hybridLayer,
+                'Satellite': satelliteLayer
+            };
+            this._projectLayerControl = L.control.layers(baseLayers, null, { position: 'topright', collapsed: true });
+            this._projectLayerControl.addTo(this._projectMap);
+
+            if (latitudeInput && longitudeInput) {
+                this._updateProjectMarker(parseFloat(latitudeInput.value) || defaultCenter[0], parseFloat(longitudeInput.value) || defaultCenter[1]);
+            }
+
+            this._projectMap.on('click', (e) => {
+                const lat = e.latlng.lat;
+                const lng = e.latlng.lng;
+                if (latitudeInput) latitudeInput.value = lat.toFixed(7);
+                if (longitudeInput) longitudeInput.value = lng.toFixed(7);
+                if (coordinatesInput) coordinatesInput.value = `${lat.toFixed(7)}, ${lng.toFixed(7)}`;
+                this._updateProjectMarker(lat, lng);
+            });
+
+            this._projectMap.on('zoomend', () => {
+                if (zoomInput) {
+                    zoomInput.value = this._projectMap.getZoom();
+                }
+            });
+
+            setTimeout(() => { try { this._projectMap.invalidateSize(); } catch(_){} }, 50);
+        } catch (err) {
+            console.error('❌ Failed to initialize project map:', err);
+        }
+    }
+
+    _updateProjectMarker(lat, lng) {
+        if (!this._projectMap || !lat || !lng) return;
+        try {
+            if (this._projectMarker) {
+                this._projectMarker.setLatLng([lat, lng]);
+            } else {
+                this._projectMarker = L.marker([lat, lng]);
+                this._projectMarker.addTo(this._projectMap);
+            }
+        } catch (err) {
+            console.warn('⚠️ Could not update project marker:', err);
+        }
+    }
+
+    async _geocodeProjectSearch(query, latitudeInput, longitudeInput, coordinatesInput, zoomInput) {
+        try {
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`;
+            const response = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+            const results = await response.json();
+            if (!Array.isArray(results) || results.length === 0) {
+                this.showError('No results found for that search');
                 return;
             }
+            const best = results[0];
+            const lat = parseFloat(best.lat);
+            const lng = parseFloat(best.lon);
+            const zoom = 17;
+            if (this._projectMap) this._projectMap.setView([lat, lng], zoom);
+            if (latitudeInput) latitudeInput.value = lat.toFixed(7);
+            if (longitudeInput) longitudeInput.value = lng.toFixed(7);
+            if (coordinatesInput) coordinatesInput.value = `${lat.toFixed(7)}, ${lng.toFixed(7)}`;
+            if (zoomInput) zoomInput.value = zoom;
+            this._updateProjectMarker(lat, lng);
+        } catch (err) {
+            console.error('❌ Geocoding failed:', err);
+            this.showError('Search failed. Try a different address or click the map.');
+        }
+    }
 
-            const row = Math.floor(brickCount / bricksPerRow);
-            const positionInRow = brickCount % bricksPerRow;
-            
-            // Create brick element
-            const brick = document.createElement('div');
-            brick.className = 'brick';
-            
-            // Calculate position with offset for alternating rows
-            const x = positionInRow * brickWidth + (row % 2) * rowOffset;
-            const y = row * brickHeight;
-            
-            brick.style.left = x + 'px';
-            brick.style.top = y + 'px';
-            brick.style.animationDelay = (brickCount * 0.1) + 's';
-            
-            brickWall.appendChild(brick);
-            
-            brickCount++;
-            
-            // Check if we need to drop the wall
-            if (brickCount % bricksPerRow === 0 && brickCount > 0) {
-                currentRow++;
-                if (currentRow >= maxRows) {
-                    // Drop the wall
-                    setTimeout(() => {
-                        brickWall.classList.add('dropping');
-                        setTimeout(() => {
-                            brickWall.classList.remove('dropping');
-                            // Remove bottom row
-                            const bricks = brickWall.querySelectorAll('.brick');
-                            for (let i = 0; i < bricksPerRow; i++) {
-                                if (bricks[i]) {
-                                    bricks[i].remove();
-                                }
-                            }
-                            // Adjust remaining bricks
-                            const remainingBricks = brickWall.querySelectorAll('.brick');
-                            remainingBricks.forEach((brick, index) => {
-                                const row = Math.floor(index / bricksPerRow);
-                                const positionInRow = index % bricksPerRow;
-                                const x = positionInRow * brickWidth + (row % 2) * rowOffset;
-                                const y = row * brickHeight;
-                                brick.style.left = x + 'px';
-                                brick.style.top = y + 'px';
-                            });
-                            currentRow = maxRows - 1;
-                        }, 200);
-                    }, 300);
-                }
+    async _searchProjectSuggestions(query, bounds) {
+        try {
+            let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5`;
+            if (bounds) {
+                // Bias by current map view
+                const west = bounds.getWest();
+                const north = bounds.getNorth();
+                const east = bounds.getEast();
+                const south = bounds.getSouth();
+                url += `&viewbox=${west},${north},${east},${south}`;
             }
-            
-            // Continue adding bricks
-            setTimeout(addBrick, 150);
-        };
+            const response = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+            if (!response.ok) return [];
+            const results = await response.json();
+            if (!Array.isArray(results)) return [];
+            return results;
+        } catch (err) {
+            console.warn('⚠️ Suggestion search failed:', err);
+            return [];
+        }
+    }
 
-        // Start the animation
-        addBrick();
+    _renderProjectSearchResults(containerEl, results, query, activeIdx, onSelect) {
+        if (!containerEl) return;
+        if (!results || results.length === 0) {
+            this._clearProjectSearchResults(containerEl);
+            return;
+        }
+        const safeQuery = (query || '').trim();
+        containerEl.innerHTML = results.map((r, idx) => {
+            const title = this._escapeHtml(r.display_name || 'Result');
+            const highlighted = safeQuery ? this._highlightMatch(title, safeQuery) : title;
+            return `
+            <div data-idx="${idx}" style="padding: 0.5rem 0.75rem; cursor: pointer; border-bottom: 1px solid #f1f5f9; ${activeIdx === idx ? 'background:#f9fafb;' : ''}">
+                <div style="font-size: 0.9rem; color: #111827;">${highlighted}</div>
+                ${r.address ? `<div style=\"font-size: 0.75rem; color: #6b7280; margin-top: 2px;\">${this._escapeHtml(Object.values(r.address).slice(0,3).join(', '))}</div>` : ''}
+            </div>`;
+        }).join('');
+        containerEl.style.display = 'block';
+        Array.from(containerEl.children).forEach((child, i) => {
+            child.addEventListener('mouseover', () => { child.style.background = '#f9fafb'; });
+            child.addEventListener('mouseout', () => { if (i !== activeIdx) child.style.background = 'white'; });
+            child.addEventListener('click', () => {
+                const item = results[i];
+                if (item && onSelect) onSelect(item);
+            });
+        });
+    }
+
+    _clearProjectSearchResults(containerEl) {
+        if (!containerEl) return;
+        containerEl.innerHTML = '';
+        containerEl.style.display = 'none';
+        this._projectSearchResults = [];
+    }
+
+    _escapeHtml(str) {
+        try {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/\"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        } catch(_) { return ''; }
+    }
+
+    _highlightMatch(text, query) {
+        try {
+            const q = query.trim();
+            if (!q) return text;
+            const pattern = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'ig');
+            return text.replace(pattern, (m) => `<mark style="background:#fff3c4; color:#1f2937; padding:0 2px; border-radius:2px;">${m}</mark>`);
+        } catch(_) {
+            return text;
+        }
     }
 
 }

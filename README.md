@@ -12,6 +12,12 @@ A modern web-based drawing tool for construction contractors to request staging 
 - **TopoJSON Export**: Exports drawn shapes in TopoJSON format compatible with Power BI, maintaining the original construction campus data structure
 - **Email Notifications**: Automatic email confirmations and notifications
 
+## 🧭 Documentation for reviewers
+- See `docs/architecture.md` for a high-level view.
+- See `docs/config.md` for configuration.
+- See `docs/operations.md` for local run and deployment.
+- See `docs/troubleshooting.md` for common issues.
+
 ## 🏗️ Architecture
 
 ```

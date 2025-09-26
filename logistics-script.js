@@ -105,7 +105,9 @@ class LogisticsMap {
             zoomControl: true,
             attributionControl: true,
             maxZoom: 22,
-            minZoom: 10
+            minZoom: 10,
+            preferCanvas: true,
+            renderer: L.canvas({ padding: 1.0 })
         }).setView([45.5442515697061, -122.91389689455964], 16);
 
         // Add default tile layer (satellite view)
@@ -1226,6 +1228,12 @@ class LogisticsMap {
                 originalShapes.push({ element: svg, originalDisplay: svg.style.display });
                 svg.style.display = 'none';
             });
+            // Hide watermark markers so we can draw them on TOP later
+            const wmElements = mapContainer.querySelectorAll('.watermark-marker');
+            wmElements.forEach(el => {
+                originalShapes.push({ element: el, originalDisplay: el.style.display });
+                el.style.display = 'none';
+            });
 
             // Step 2: Capture the map without shapes
             const mapCanvas = await html2canvas(mapContainer, {
@@ -1260,78 +1268,139 @@ class LogisticsMap {
                 console.log('🔧 Drawing', this.currentSpaces.length, 'shapes manually...');
                 console.log('🔧 Current spaces:', this.currentSpaces.map(s => ({ id: s.id, name: s.space_name || 'Unnamed' })));
                 
+				// helpers for drawing
+				const drawPolygon = (coords, fillColor, strokeColor, lineDash = null, fillOpacity = 0.3, strokeWidth = 4) => {
+					const pixel = coords.map(coord => this.map.latLngToContainerPoint(L.latLng(coord[1], coord[0])));
+					const scaled = pixel.map(p => ({ x: p.x * 2, y: p.y * 2 }));
+					if (scaled.length < 2) return;
+					finalCtx.beginPath();
+					finalCtx.moveTo(scaled[0].x, scaled[0].y);
+					for (let i = 1; i < scaled.length; i++) finalCtx.lineTo(scaled[i].x, scaled[i].y);
+					finalCtx.closePath();
+					const alpha = Math.max(0, Math.min(1, fillOpacity));
+					finalCtx.save();
+					finalCtx.globalAlpha = alpha;
+					finalCtx.fillStyle = fillColor;
+					finalCtx.fill();
+					finalCtx.globalAlpha = 1;
+					if (lineDash && finalCtx.setLineDash) finalCtx.setLineDash(lineDash);
+					finalCtx.strokeStyle = strokeColor;
+					finalCtx.lineWidth = strokeWidth;
+					finalCtx.stroke();
+					if (finalCtx.setLineDash) finalCtx.setLineDash([]);
+					finalCtx.restore();
+				};
+
                 this.currentSpaces.forEach((space, index) => {
-                    if (!space.geometry) return;
+					if (!space.geometry) return;
 
-                    if (space.geometry.type === 'Polygon') {
-                        const coordinates = space.geometry.coordinates[0];
+					// derive category color and phase coverage
+					const categoryInfo = this.spaceCategories?.find(cat => cat.name === space.category);
+					const defaultFill = categoryInfo?.color || '#3b82f6';
+					const spacePhaseIds = space.phase_space_assignments?.map(a => a.project_phases?.id).filter(id => id !== undefined) || [];
+					const missingWhenMulti = this.currentPhases.length > 1 && this.currentPhases.some(sel => !spacePhaseIds.includes(sel));
+					const strokeColor = missingWhenMulti ? '#dc2626' : defaultFill;
+					const fillOpacity = missingWhenMulti ? 0.2 : 0.3;
 
+					if (space.geometry.type === 'Polygon') {
+						drawPolygon(space.geometry.coordinates[0], defaultFill, strokeColor, null, fillOpacity, 4);
+						console.log(`🔧 Drew polygon ${index} at exact coordinates`);
+					} else if (space.geometry.type === 'LineString') {
+						// fences
+						const coordinates = space.geometry.coordinates;
+						const pixel = coordinates.map(coord => this.map.latLngToContainerPoint(L.latLng(coord[1], coord[0])));
+						const scaled = pixel.map(p => ({ x: p.x * 2, y: p.y * 2 }));
+						if (scaled.length > 1) {
+							finalCtx.beginPath();
+							finalCtx.moveTo(scaled[0].x, scaled[0].y);
+							for (let i = 1; i < scaled.length; i++) finalCtx.lineTo(scaled[i].x, scaled[i].y);
+							finalCtx.strokeStyle = '#ffd700';
+							finalCtx.lineWidth = 4;
+							finalCtx.stroke();
+							console.log(`🔧 Drew fence ${index} at exact coordinates`);
+						}
+					} else if (space.geometry.type === 'FeatureCollection') {
+						// Crane shape composed of multiple parts
+						try {
+							space.geometry.features.forEach(feat => {
+								if (!feat || !feat.geometry) return;
+								const part = feat.properties?.part;
+								if (feat.geometry.type === 'Polygon') {
+									if (part === 'pad') {
+										drawPolygon(feat.geometry.coordinates[0], '#1f2937', '#1f2937', null, 0.6, 2);
+									} else if (part === 'sweep') {
+										drawPolygon(feat.geometry.coordinates[0], '#f59e0b', '#dc2626', [10,5], 0.25, 3);
+									} else {
+										drawPolygon(feat.geometry.coordinates[0], defaultFill, strokeColor, null, fillOpacity, 4);
+									}
+								} else if (feat.geometry.type === 'LineString') {
+									const coords = feat.geometry.coordinates;
+									const pixel = coords.map(coord => this.map.latLngToContainerPoint(L.latLng(coord[1], coord[0])));
+									const scaled = pixel.map(p => ({ x: p.x * 2, y: p.y * 2 }));
+									if (scaled.length > 1) {
+										finalCtx.beginPath();
+										finalCtx.moveTo(scaled[0].x, scaled[0].y);
+										for (let i = 1; i < scaled.length; i++) finalCtx.lineTo(scaled[i].x, scaled[i].y);
+										finalCtx.strokeStyle = part === 'radius' ? 'rgba(0,0,0,0.2)' : strokeColor;
+										finalCtx.lineWidth = 2;
+										finalCtx.stroke();
+									}
+								}
+							});
+                // Draw watermarks on top so they are not covered by shapes
+                this.currentSpaces.forEach((space) => {
+                    try {
+                        if (!space || !space.geometry) return;
+                        // Determine label text from multiple fields
+                        const labelText = space.trade || space.company || space.company_name || space.owner || space.owned_by || '';
+                        if (!labelText) return;
+
+                        // Determine a representative polygon to anchor the label
+                        let coordinates = null;
+                        if (space.geometry.type === 'Polygon') {
+                            coordinates = space.geometry.coordinates[0];
+                        } else if (space.geometry.type === 'FeatureCollection' && Array.isArray(space.geometry.features)) {
+                            // Prefer the crane pad if present, otherwise first polygon
+                            let pad = space.geometry.features.find(f => f && f.properties && f.properties.part === 'pad' && f.geometry && f.geometry.type === 'Polygon');
+                            let firstPoly = space.geometry.features.find(f => f && f.geometry && f.geometry.type === 'Polygon');
+                            const poly = pad || firstPoly;
+                            if (poly) coordinates = poly.geometry.coordinates[0];
+                        } else {
+                            // Skip lines for watermark overlay
+                            return;
+                        }
+                        if (!coordinates) return;
                         const pixelCoords = coordinates.map(coord => {
                             const latLng = L.latLng(coord[1], coord[0]);
                             return this.map.latLngToContainerPoint(latLng);
                         });
-
-                        const scaledCoords = pixelCoords.map(point => ({
-                            x: point.x * 2,
-                            y: point.y * 2
-                        }));
-
-                        const spacePhaseIds = space.phase_space_assignments?.map(assignment => 
-                            assignment.project_phases?.id
-                        ).filter(id => id !== undefined) || [];
-
-                        let color = '#10b981';
-                        if (this.currentPhases.length > 1) {
-                            const missingPhaseIds = this.currentPhases.filter(selectedId => 
-                                !spacePhaseIds.includes(selectedId)
-                            );
-                            if (missingPhaseIds.length > 0) {
-                                color = '#ef4444';
-                            }
-                        }
-
-                        finalCtx.beginPath();
-                        finalCtx.moveTo(scaledCoords[0].x, scaledCoords[0].y);
-                        for (let i = 1; i < scaledCoords.length; i++) {
-                            finalCtx.lineTo(scaledCoords[i].x, scaledCoords[i].y);
-                        }
-                        finalCtx.closePath();
-
-                        finalCtx.fillStyle = color + '4D';
-                        finalCtx.fill();
-                        finalCtx.strokeStyle = color;
-                        finalCtx.lineWidth = 4;
-                        finalCtx.stroke();
-
-                        console.log(`🔧 Drew polygon ${index} at exact coordinates`);
-                    } else if (space.geometry.type === 'LineString') {
-                        // Draw fences as yellow polylines
-                        const coordinates = space.geometry.coordinates;
-
-                        const pixelCoords = coordinates.map(coord => {
-                            const latLng = L.latLng(coord[1], coord[0]);
-                            return this.map.latLngToContainerPoint(latLng);
-                        });
-
-                        const scaledCoords = pixelCoords.map(point => ({
-                            x: point.x * 2,
-                            y: point.y * 2
-                        }));
-
-                        if (scaledCoords.length > 1) {
-                            finalCtx.beginPath();
-                            finalCtx.moveTo(scaledCoords[0].x, scaledCoords[0].y);
-                            for (let i = 1; i < scaledCoords.length; i++) {
-                                finalCtx.lineTo(scaledCoords[i].x, scaledCoords[i].y);
-                            }
-                            finalCtx.strokeStyle = '#ffd700'; // Yellow to match on-map style
-                            finalCtx.lineWidth = 4; // 2px * scale factor
-                            finalCtx.stroke();
-
-                            console.log(`🔧 Drew fence ${index} at exact coordinates`);
-                        }
-                    }
+                        const scaled = pixelCoords.map(p => ({ x: p.x * 2, y: p.y * 2 }));
+                        if (scaled.length < 3) return;
+                        const cx = scaled.reduce((s,p)=>s+p.x,0)/scaled.length;
+                        const cy = scaled.reduce((s,p)=>s+p.y,0)/scaled.length;
+                        const minX = Math.min.apply(null, scaled.map(p=>p.x));
+                        const maxX = Math.max.apply(null, scaled.map(p=>p.x));
+                        const width = Math.max(20, maxX - minX);
+                        // Font size based on polygon width, clamped
+                        const fontSize = Math.max(12, Math.min(22, Math.round(width * 0.06)));
+                        finalCtx.save();
+                        finalCtx.translate(cx, cy);
+                        finalCtx.rotate(Math.PI/4);
+                        finalCtx.font = `bold ${fontSize}px Arial`;
+                        finalCtx.textAlign = 'center';
+                        finalCtx.textBaseline = 'middle';
+                        finalCtx.lineWidth = 3;
+                        finalCtx.strokeStyle = 'rgba(0,0,0,0.8)';
+                        finalCtx.strokeText(labelText, 0, 0);
+                        finalCtx.fillStyle = 'rgba(255,255,255,0.85)';
+                        finalCtx.fillText(labelText, 0, 0);
+                        finalCtx.restore();
+                    } catch(_) {}
                 });
+							console.log(`🔧 Drew crane shape ${index}`);
+						} catch(e) { console.warn('⚠️ Error drawing crane FeatureCollection', e); }
+					}
+				});
             }
 
             // Remove loading message
@@ -1395,73 +1464,50 @@ class LogisticsMap {
         const brickWall = document.getElementById('brickWall');
         if (!brickWall) return;
 
-        let brickCount = 0;
-        let currentRow = 0;
-        const maxRows = 5;
-        const bricksPerRow = 4;
-        const brickWidth = 40;
-        const brickHeight = 20;
-        const rowOffset = brickWidth / 2;
+        brickWall.innerHTML = '';
+        const canvas = document.createElement('canvas');
+        canvas.style.width = '200px';
+        canvas.style.height = '240px';
+        const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        canvas.width = 200 * dpr;
+        canvas.height = 240 * dpr;
+        brickWall.appendChild(canvas);
+        const ctx = canvas.getContext('2d');
+        ctx.scale(dpr, dpr);
 
-        const addBrick = () => {
-            if (brickCount >= bricksPerRow * maxRows) {
-                // Reset animation
-                brickCount = 0;
-                currentRow = 0;
-                brickWall.innerHTML = '';
-                setTimeout(addBrick, 500);
-                return;
+        const rows = 5, perRow = 4, bw = 40, bh = 20, rowOffset = bw/2, total = rows*perRow;
+        const appearMs = 110, riseMs = 220, resetDelay = 700;
+        const ease = t => t < 0 ? 0 : t > 1 ? 1 : (1 - Math.cos(Math.PI * t)) / 2;
+
+        let start = performance.now();
+        function draw(now){
+            const t = now - start;
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            for (let i=0;i<total;i++){
+                const row = Math.floor(i/perRow), col = i%perRow;
+                const x = col*bw + (row%2)*rowOffset;
+                const y = row*bh;
+                const appearAt = i*appearMs;
+                const prog = ease((t-appearAt)/riseMs);
+                if (prog<=0) continue;
+                const yy = y - (1-prog)*18;
+                const grad = ctx.createLinearGradient(x,y,x+bw,y+bh);
+                grad.addColorStop(0, '#1e40af');
+                grad.addColorStop(1, '#3b82f6');
+                ctx.fillStyle = grad;
+                ctx.strokeStyle = '#172554';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.rect(Math.round(x)+1, Math.round(yy)+1, bw-2, bh-2);
+                ctx.fill();
+                ctx.stroke();
+                ctx.fillStyle = 'rgba(255,255,255,0.25)';
+                ctx.fillRect(Math.round(x)+3, Math.round(yy)+4, bw-6, 3);
             }
-
-            const row = Math.floor(brickCount / bricksPerRow);
-            const positionInRow = brickCount % bricksPerRow;
-
-            const brick = document.createElement('div');
-            brick.className = 'brick';
-
-            const x = positionInRow * brickWidth + (row % 2) * rowOffset;
-            const y = row * brickHeight;
-
-            brick.style.left = x + 'px';
-            brick.style.top = y + 'px';
-            brick.style.animationDelay = (brickCount * 0.1) + 's';
-
-            brickWall.appendChild(brick);
-
-            brickCount++;
-
-            if (brickCount % bricksPerRow === 0 && brickCount > 0) {
-                currentRow++;
-                if (currentRow >= maxRows) {
-                    setTimeout(() => {
-                        brickWall.classList.add('dropping');
-                        setTimeout(() => {
-                            brickWall.classList.remove('dropping');
-                            const bricks = brickWall.querySelectorAll('.brick');
-                            for (let i = 0; i < bricksPerRow; i++) {
-                                if (bricks[i]) {
-                                    bricks[i].remove();
-                                }
-                            }
-                            const remainingBricks = brickWall.querySelectorAll('.brick');
-                            remainingBricks.forEach((brick, index) => {
-                                const row = Math.floor(index / bricksPerRow);
-                                const positionInRow = index % bricksPerRow;
-                                const x = positionInRow * brickWidth + (row % 2) * rowOffset;
-                                const y = row * brickHeight;
-                                brick.style.left = x + 'px';
-                                brick.style.top = y + 'px';
-                            });
-                            currentRow = maxRows - 1;
-                        }, 200);
-                    }, 300);
-                }
-            }
-            
-            // Continue adding bricks
-            setTimeout(addBrick, 150);
-        };
-        addBrick();
+            if (t > total*appearMs + riseMs + resetDelay) start = now;
+            requestAnimationFrame(draw);
+        }
+        requestAnimationFrame(draw);
     }
 }
 
