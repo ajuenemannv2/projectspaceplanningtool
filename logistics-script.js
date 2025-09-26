@@ -9,8 +9,10 @@ class LogisticsMap {
         this.currentProject = null;
         this.currentPhases = [];
         this.currentSpaces = [];
+        this.spaceCategories = [];
         this.supabase = null;
         this.phaseChangeTimeout = null;
+        this.watermarkMarkers = [];
         this.currentTileLayer = null;
         
         this.init();
@@ -23,6 +25,22 @@ class LogisticsMap {
         this.showLoadingAnimation();
         
         try {
+            // Global error banner helpers
+            const errorBanner = document.getElementById('globalErrorBanner');
+            const errorText = document.getElementById('globalErrorText');
+            const errorRetry = document.getElementById('globalErrorRetry');
+            const errorDismiss = document.getElementById('globalErrorDismiss');
+            const showError = (message, retryFn) => {
+                if (errorText) errorText.textContent = message || 'An error occurred.';
+                if (errorBanner) errorBanner.style.display = 'block';
+                if (errorRetry) errorRetry.onclick = () => { if (retryFn) retryFn(); if (errorBanner) errorBanner.style.display = 'none'; };
+                if (errorDismiss) errorDismiss.onclick = () => { if (errorBanner) errorBanner.style.display = 'none'; };
+            };
+            if (!window.SUPABASE_CONFIG || !window.SUPABASE_CONFIG.url || !window.SUPABASE_CONFIG.anonKey) {
+                showError('Configuration error: Supabase settings not found. Ensure config/public-supabase-config.js is included with a valid URL and anon key.', () => window.location.reload());
+                throw new Error('Missing Supabase config');
+            }
+            
             // Initialize Supabase
             if (typeof supabase === 'undefined') {
                 console.error('❌ Supabase not loaded!');
@@ -30,8 +48,8 @@ class LogisticsMap {
             }
 
             this.supabase = supabase.createClient(
-                'https://yfewnhiugwmtdenxvrme.supabase.co',
-                'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlmZXduaGl1Z3dtdGRlbnh2cm1lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3MDI2MzEsImV4cCI6MjA3MzI3ODYzMX0.aawp6SPxxPNSGmOVQ4zfPM258mo48SZmtelTko7JkGg'
+                window.SUPABASE_CONFIG.url,
+                window.SUPABASE_CONFIG.anonKey
             );
 
             // Initialize map
@@ -40,8 +58,34 @@ class LogisticsMap {
             // Setup event listeners
             this.setupEventListeners();
             
-            // Load projects
+            // Load projects first
             await this.loadProjects();
+
+            // Apply deep-linked or saved project selection and zoom
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const fromQuery = params.get('project');
+                const fromStorage = localStorage.getItem('selected_project_id');
+                const projectToSelect = fromQuery || fromStorage;
+                const requestedZoom = params.get('zoom') || localStorage.getItem('selected_project_zoom');
+                const select = document.getElementById('projectSelect');
+                if (projectToSelect && select) {
+                    select.value = projectToSelect;
+                    await this.onProjectChange(projectToSelect);
+                    // If a zoom was provided, apply it after project change setView
+                    if (requestedZoom && this.map) {
+                        try {
+                            const z = parseInt(requestedZoom, 10);
+                            if (!isNaN(z)) {
+                                this.map.setZoom(z);
+                            }
+                        } catch(_) {}
+                    }
+                }
+            } catch(_) {}
+            
+            // Load space categories
+            await this.loadSpaceCategories();
             
             console.log('✅ Logistics Map initialized');
         } catch (error) {
@@ -72,6 +116,14 @@ class LogisticsMap {
         this.mapLayers.measurements = L.layerGroup().addTo(this.map);
 
         console.log('🔧 Map initialized');
+
+        // Persist zoom selection to keep parity when navigating back
+        this.map.on('zoomend', () => {
+            try {
+                const z = this.map.getZoom();
+                localStorage.setItem('selected_project_zoom', String(z));
+            } catch(_) {}
+        });
     }
 
     setupEventListeners() {
@@ -89,6 +141,14 @@ class LogisticsMap {
             phaseContainer.addEventListener('change', (e) => {
                 if (e.target.type === 'checkbox') {
                     this.onPhaseChange();
+                    // Persist selected phases for cross-page continuity
+                    try {
+                        const ids = Array.from(document.querySelectorAll('input[name="phases"]:checked')).map(cb => parseInt(cb.value));
+                        localStorage.setItem('selected_phase_ids', JSON.stringify(ids));
+                        if (this.currentProject?.id) {
+                            localStorage.setItem('selected_project_id', String(this.currentProject.id));
+                        }
+                    } catch(_) {}
                 }
             });
         }
@@ -116,6 +176,182 @@ class LogisticsMap {
                 this.exportHDImage();
             });
         }
+    }
+
+    async loadSpaceCategories() {
+        try {
+            const { data: categories, error } = await this.supabase
+                .from('space_categories')
+                .select('*')
+                .eq('is_active', true)
+                .order('name', { ascending: true });
+
+            if (error) throw error;
+
+            this.spaceCategories = categories || [];
+            console.log('✅ Space categories loaded:', this.spaceCategories.length);
+        } catch (error) {
+            console.error('❌ Error loading space categories:', error);
+            this.spaceCategories = [];
+        }
+    }
+
+    // Watermark system for logistics map
+    createWatermarkPattern(companyName, color = '#3b82f6') {
+        const patternId = `watermark-${companyName.replace(/\s+/g, '-').toLowerCase()}`;
+        
+        // Check if pattern already exists
+        if (document.getElementById(patternId)) {
+            return patternId;
+        }
+        
+        // Create SVG pattern
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', '200');
+        svg.setAttribute('height', '200');
+        svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        
+        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
+        pattern.setAttribute('id', patternId);
+        pattern.setAttribute('patternUnits', 'userSpaceOnUse');
+        pattern.setAttribute('width', '200');
+        pattern.setAttribute('height', '200');
+        pattern.setAttribute('patternTransform', 'rotate(45)');
+        
+        // Create diagonal text elements
+        const text1 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text1.setAttribute('x', '20');
+        text1.setAttribute('y', '40');
+        text1.setAttribute('font-family', 'Arial, sans-serif');
+        text1.setAttribute('font-size', '14');
+        text1.setAttribute('font-weight', 'bold');
+        text1.setAttribute('fill', color);
+        text1.setAttribute('fill-opacity', '0.3');
+        text1.setAttribute('text-anchor', 'start');
+        text1.textContent = companyName;
+        
+        const text2 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text2.setAttribute('x', '120');
+        text2.setAttribute('y', '140');
+        text2.setAttribute('font-family', 'Arial, sans-serif');
+        text2.setAttribute('font-size', '14');
+        text2.setAttribute('font-weight', 'bold');
+        text2.setAttribute('fill', color);
+        text2.setAttribute('fill-opacity', '0.3');
+        text2.setAttribute('text-anchor', 'start');
+        text2.textContent = companyName;
+        
+        const text3 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text3.setAttribute('x', '70');
+        text3.setAttribute('y', '90');
+        text3.setAttribute('font-family', 'Arial, sans-serif');
+        text3.setAttribute('font-size', '14');
+        text3.setAttribute('font-weight', 'bold');
+        text3.setAttribute('fill', color);
+        text3.setAttribute('fill-opacity', '0.3');
+        text3.setAttribute('text-anchor', 'start');
+        text3.textContent = companyName;
+        
+        pattern.appendChild(text1);
+        pattern.appendChild(text2);
+        pattern.appendChild(text3);
+        defs.appendChild(pattern);
+        svg.appendChild(defs);
+        
+        // Add to document
+        let svgContainer = document.getElementById('watermark-svg-container');
+        if (!svgContainer) {
+            svgContainer = document.createElement('div');
+            svgContainer.id = 'watermark-svg-container';
+            svgContainer.style.position = 'absolute';
+            svgContainer.style.left = '-9999px';
+            svgContainer.style.top = '-9999px';
+            svgContainer.style.width = '0';
+            svgContainer.style.height = '0';
+            svgContainer.style.overflow = 'hidden';
+            document.body.appendChild(svgContainer);
+        }
+        
+        svgContainer.appendChild(svg);
+        return patternId;
+    }
+
+    applyWatermarkToLayer(layer, companyName) {
+        if (!layer || !companyName) return;
+        
+        // Use the same watermark system as the main tool
+        this.createShapeWatermark(layer, companyName);
+    }
+    
+    // Create a watermark that's bound to a specific shape (same as main tool)
+    createShapeWatermark(shape, companyName) {
+        const bounds = shape.getBounds();
+        const center = bounds.getCenter();
+        
+        // Calculate appropriate font size based on shape size
+        const width = bounds.getEast() - bounds.getWest();
+        const height = bounds.getNorth() - bounds.getSouth();
+        const area = width * height;
+        
+        let fontSize = 16;
+        if (area < 0.00005) fontSize = 10;      // Very small shapes
+        else if (area < 0.0001) fontSize = 12;    // Small shapes
+        else if (area < 0.0005) fontSize = 14;  // Medium-small shapes
+        else if (area < 0.001) fontSize = 16;   // Medium shapes
+        else if (area < 0.005) fontSize = 18;    // Large shapes
+        else fontSize = 20;                      // Very large shapes
+        
+        // Create a custom marker that will move with the shape
+        const watermarkMarker = L.marker(center, {
+            icon: L.divIcon({
+                className: 'watermark-marker',
+                html: `
+                    <div class="watermark-content" style="
+                        transform: rotate(45deg);
+                        color: #ffffff;
+                        font-size: ${fontSize}px;
+                        font-weight: bold;
+                        opacity: 0.6;
+                        pointer-events: none;
+                        white-space: nowrap;
+                        text-shadow: 
+                            -1px -1px 0 #000000,
+                            1px -1px 0 #000000,
+                            -1px 1px 0 #000000,
+                            1px 1px 0 #000000,
+                            0 0 3px rgba(0,0,0,0.8);
+                        text-align: center;
+                        background: transparent;
+                        border: none;
+                        box-shadow: none;
+                        margin: 0;
+                        padding: 0;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        width: 100%;
+                        height: 100%;
+                    ">${companyName}</div>
+                `,
+                iconSize: [120, 60],
+                iconAnchor: [60, 30]
+            })
+        });
+        
+        // Add to map
+        watermarkMarker.addTo(this.map);
+        
+        // Store reference for cleanup
+        if (!this.watermarkMarkers) {
+            this.watermarkMarkers = [];
+        }
+        this.watermarkMarkers.push(watermarkMarker);
+        
+        // Store the watermark marker on the shape for easy removal
+        shape._watermarkMarker = watermarkMarker;
+        
+        console.log('✅ Watermark applied to logistics layer:', companyName);
     }
 
     async loadProjects() {
@@ -162,6 +398,13 @@ class LogisticsMap {
 
             this.currentProject = project;
 
+            // Persist selection for cross-page continuity
+            try {
+                localStorage.setItem('selected_project_id', String(projectId));
+                const z = this.map ? this.map.getZoom() : (project.zoom || 16);
+                if (z) localStorage.setItem('selected_project_zoom', String(z));
+            } catch(_) {}
+
             // Zoom to project
             if (project.coordinates && project.coordinates.length === 2) {
                 this.map.setView(project.coordinates, project.zoom || 16);
@@ -179,6 +422,20 @@ class LogisticsMap {
         }
     }
 
+    // Navigate back to main tool carrying selection and zoom
+    goToMainTool() {
+        try {
+            const projectId = (this.currentProject && this.currentProject.id) || document.getElementById('projectSelect')?.value;
+            if (projectId) localStorage.setItem('selected_project_id', String(projectId));
+            const z = this.map ? this.map.getZoom() : (this.currentProject?.zoom || 16);
+            if (z) localStorage.setItem('selected_project_zoom', String(z));
+            const url = projectId ? `index.html?project=${encodeURIComponent(projectId)}${z ? `&zoom=${encodeURIComponent(z)}` : ''}` : 'index.html';
+            window.location.href = url;
+        } catch(_) {
+            window.location.href = 'index.html';
+        }
+    }
+
     async loadPhases(projectId) {
         try {
             const { data: phases, error } = await this.supabase
@@ -193,21 +450,37 @@ class LogisticsMap {
             if (!container) return;
 
             container.innerHTML = '';
-            phases.forEach((phase, index) => {
+            phases.forEach((phase) => {
                 const label = document.createElement('label');
-                // Auto-select the first phase
-                const checked = index === 0 ? 'checked' : '';
                 label.innerHTML = `
-                    <input type="checkbox" value="${phase.id}" name="phases" ${checked}>
+                    <input type="checkbox" value="${phase.id}" name="phases">
                     ${phase.name}
                 `;
                 container.appendChild(label);
             });
 
-            // Auto-select first phase and load spaces
-            if (phases.length > 0) {
-                this.currentPhases = [phases[0].id];
-                this.onPhaseChange();
+            // Restore previously selected phases if saved
+            try {
+                const savedProjectId = localStorage.getItem('selected_project_id');
+                const savedPhaseIds = JSON.parse(localStorage.getItem('selected_phase_ids') || '[]');
+                if (String(savedProjectId) === String(projectId) && Array.isArray(savedPhaseIds) && savedPhaseIds.length > 0) {
+                    this.currentPhases = savedPhaseIds.map(id => parseInt(id)).filter(id => !isNaN(id));
+                    const checkboxes = container.querySelectorAll('input[name="phases"]');
+                    checkboxes.forEach(cb => {
+                        if (this.currentPhases.includes(parseInt(cb.value))) {
+                            cb.checked = true;
+                        }
+                    });
+                    // Load spaces with restored filters
+                    this.onPhaseChange();
+                } else {
+                    // No saved selection: leave all unchecked
+                    this.currentPhases = [];
+                    this.filterSpaces();
+                }
+            } catch(_) {
+                this.currentPhases = [];
+                this.filterSpaces();
             }
 
             console.log('🔧 Phases loaded:', phases.length);
@@ -324,17 +597,42 @@ class LogisticsMap {
         } catch (error) {
             console.warn('Warning clearing layers:', error);
         }
+        
+        // Clear existing watermarks
+        if (this.watermarkMarkers) {
+            this.watermarkMarkers.forEach(marker => marker.remove());
+            this.watermarkMarkers = [];
+        }
 
         spaces.forEach((space, index) => {
             if (space && space.geometry) {
                 try {
-                    // Determine color based on phase coverage (same logic as main tool)
+                    // Get category info first (needed for phase coverage logic)
+                    const categoryInfo = this.spaceCategories?.find(cat => cat.name === space.category);
+                    
+                    // Check if this is a crane shape (has multiple features with 'part' properties)
+                    const isCraneShape = space.geometry && space.geometry.type === 'FeatureCollection' && 
+                                        space.geometry.features && space.geometry.features.some(f => f.properties && f.properties.part);
+                    
+                    let color, fillColor;
+                    
+                    if (isCraneShape) {
+                        // Crane shapes use their own color scheme
+                        color = '#1f2937';  // Dark grey for crane pad
+                        fillColor = '#1f2937';
+                    } else {
+                        // Regular shapes use category colors
+                        color = categoryInfo?.color || '#3b82f6';  // Use category color or default blue
+                        fillColor = color;
+                    }
+                    
+                    // Determine opacity and border style based on phase coverage
                     const spacePhaseIds = space.phase_space_assignments?.map(assignment => 
                         assignment.project_phases?.id
                     ).filter(id => id !== undefined) || [];
 
-                    let color = '#059669'; // Green - default
-                    let fillColor = '#10b981';
+                    let fillOpacity = 0.3;
+                    let weight = 2;
                     let missingPhases = [];
 
                     // If multiple phases are selected, check if space exists in ALL of them
@@ -344,15 +642,22 @@ class LogisticsMap {
                         );
                         
                         if (missingPhaseIds.length > 0) {
-                            color = '#dc2626'; // Red - missing phases
-                            fillColor = '#ef4444';
+                            color = '#dc2626'; // Red border for missing phases
+                            fillColor = categoryInfo?.color || '#3b82f6';  // Keep category color for fill
+                            fillOpacity = 0.2;  // More transparent for incomplete
+                            weight = 3;  // Thicker border for incomplete
                             
-                            // Get names of missing phases
-                            const allPhases = this.getAllPhasesForProject();
-                            missingPhases = missingPhaseIds.map(id => {
-                                const phase = allPhases.find(p => p.id === id);
-                                return phase ? phase.name : `Phase ${id}`;
-                            });
+                            // Get names of missing phases (with error handling)
+                            try {
+                                const allPhases = this.getAllPhasesForProject();
+                                missingPhases = missingPhaseIds.map(id => {
+                                    const phase = allPhases.find(p => p.id === id);
+                                    return phase ? phase.name : `Phase ${id}`;
+                                });
+                            } catch (error) {
+                                console.warn('⚠️ Error getting phase names:', error);
+                                missingPhases = missingPhaseIds.map(id => `Phase ${id}`);
+                            }
                         }
                     }
 
@@ -368,20 +673,105 @@ class LogisticsMap {
                             opacity: 0.9
                         });
                     } else {
-                        layer = L.geoJSON(space.geometry, {
-                            style: {
-                                color: color,
-                                fillColor: fillColor,
-                                fillOpacity: 0.3,
-                                weight: 2,
-                                opacity: 0.8
-                            }
-                        });
+                        // Create layer with appropriate styling
+                        if (isCraneShape) {
+                            // Handle crane shapes with different styling for each part
+                            layer = L.geoJSON(space.geometry, {
+                                style: function(feature) {
+                                    const part = feature.properties?.part;
+                                    if (part === 'pad') {
+                                        return {
+                                            color: '#1f2937',  // Dark grey for crane pad
+                                            fillColor: '#1f2937',
+                                            fillOpacity: 0.6,
+                                            weight: 2,
+                                            opacity: 0.8
+                                        };
+                                    } else if (part === 'sweep') {
+                                        return {
+                                            color: '#dc2626',  // Red outline for sweep sector
+                                            fillColor: '#f59e0b',  // Orange fill
+                                            fillOpacity: 0.25,
+                                            weight: 3,
+                                            opacity: 0.8,
+                                            dashArray: '10, 5'  // Red dashed outline
+                                        };
+                                    } else if (part === 'radius') {
+                                        // Hide radius line in saved crane shapes - it's only for drawing
+                                        return {
+                                            color: 'transparent',
+                                            weight: 0,
+                                            opacity: 0
+                                        };
+                                    }
+                                    // Default fallback
+                                    return {
+                                        color: '#1f2937',
+                                        fillColor: '#1f2937',
+                                        fillOpacity: 0.3,
+                                        weight: 2,
+                                        opacity: 0.8
+                                    };
+                                }
+                            });
+                        } else {
+                            // Regular shapes use standard styling
+                            layer = L.geoJSON(space.geometry, {
+                                style: {
+                                    color: color,
+                                    fillColor: fillColor,
+                                    fillOpacity: fillOpacity,
+                                    weight: weight,
+                                    opacity: 0.8
+                                }
+                            });
+                        }
+                        
+                        // Apply watermark for company name
+                        if (space.trade) {
+                            console.log('🏷️ Applying watermark to logistics space for company:', space.trade);
+                            this.applyWatermarkToLayer(layer, space.trade);
+                        }
                     }
 
                     const phaseNames = space.phase_space_assignments?.map(assignment =>
                         assignment.project_phases?.name || 'Unknown Phase'
                     ).join(', ') || 'No phases assigned';
+
+                    // Add phase coverage information (matching main tool logic)
+                    let phaseCoverageInfo = '';
+                    if (this.currentPhases.length > 1) {
+                        const spacePhaseIds = space.phase_space_assignments?.map(assignment => 
+                            assignment.project_phases?.id
+                        ) || [];
+                        
+                        const coversAllPhases = this.currentPhases.every(selectedPhaseId => 
+                            spacePhaseIds.includes(selectedPhaseId)
+                        );
+                        
+                        if (coversAllPhases) {
+                            phaseCoverageInfo = '<p style="color: #059669; font-weight: bold;">✅ Covers all selected phases</p>';
+                        } else {
+                            // Get the names of missing phases
+                            const missingPhaseIds = this.currentPhases.filter(selectedPhaseId => 
+                                !spacePhaseIds.includes(selectedPhaseId)
+                            );
+                            
+                            // Get phase names for missing phases
+                            const missingPhaseNames = missingPhaseIds.map(phaseId => {
+                                try {
+                                    const allPhases = this.getAllPhasesForProject();
+                                    const phase = allPhases.find(p => p.id === phaseId);
+                                    return phase ? phase.name : `Phase ${phaseId}`;
+                                } catch (error) {
+                                    console.warn('⚠️ Error getting phase name:', error);
+                                    return `Phase ${phaseId}`;
+                                }
+                            });
+                            
+                            phaseCoverageInfo = `<p style="color: #dc2626; font-weight: bold;">⚠️ Missing from phases: ${missingPhaseNames.join(', ')}</p>`;
+                        }
+                    }
 
                     // Create popup content with phase coverage info
                     let popupContent = `
@@ -390,9 +780,10 @@ class LogisticsMap {
                             <p><strong>Category:</strong> ${space.category || 'Not specified'}</p>
                             <p><strong>Trade:</strong> ${space.trade || 'Not specified'}</p>
                             <p><strong>Assigned Phases:</strong> ${phaseNames}</p>
+                            ${phaseCoverageInfo}
                     `;
 
-                    // Add missing phases warning if applicable
+                    // Legacy missing phases warning (keeping for compatibility)
                     if (missingPhases.length > 0) {
                         popupContent += `
                             <p><strong style="color: #dc2626;">⚠️ Missing from phases:</strong> ${missingPhases.join(', ')}</p>
@@ -428,23 +819,32 @@ class LogisticsMap {
 
     // Helper method to get all phases for the current project
     getAllPhasesForProject() {
-        if (!this.currentProject) return [];
-        
-        // Get phases from the checkboxes (they should be loaded when project changes)
-        const phaseCheckboxes = document.querySelectorAll('input[name="phases"]');
-        const phases = [];
-        
-        phaseCheckboxes.forEach(checkbox => {
-            const label = checkbox.closest('label');
-            if (label) {
-                phases.push({
-                    id: parseInt(checkbox.value),
-                    name: label.textContent.trim()
-                });
-            }
-        });
-        
-        return phases;
+        try {
+            if (!this.currentProject) return [];
+            
+            // Get phases from the checkboxes (they should be loaded when project changes)
+            const phaseCheckboxes = document.querySelectorAll('input[name="phases"]');
+            const phases = [];
+            
+            phaseCheckboxes.forEach(checkbox => {
+                try {
+                    const label = checkbox.closest('label');
+                    if (label) {
+                        phases.push({
+                            id: parseInt(checkbox.value),
+                            name: label.textContent.trim()
+                        });
+                    }
+                } catch (error) {
+                    console.warn('⚠️ Error processing phase checkbox:', error);
+                }
+            });
+            
+            return phases;
+        } catch (error) {
+            console.warn('⚠️ Error in getAllPhasesForProject:', error);
+            return [];
+        }
     }
 
     // Toggle measurements for a specific space

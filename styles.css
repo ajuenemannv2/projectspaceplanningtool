@@ -1,3 +1,177 @@
+/* Caution tape pattern for crane sweep sector */
+.crane-sweep-pattern {
+    fill-opacity: 0.25;
+}
+
+/* SVG pattern injected via JS will be referenced as url(#craneCautionPattern) */
+
+/* Company watermark styles */
+.watermarked-shape {
+    fill-opacity: 0.6 !important;
+}
+
+/* Ensure watermarks scale with map zoom */
+.leaflet-zoom-animated .watermarked-shape {
+    vector-effect: non-scaling-stroke;
+}
+
+/* Watermark container - hidden SVG definitions */
+#watermark-svg-container {
+    position: absolute !important;
+    left: -9999px !important;
+    top: -9999px !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    visibility: hidden !important;
+}
+
+/* Simple watermark text overlay */
+.watermark-text-overlay {
+    position: absolute !important;
+    pointer-events: none !important;
+    z-index: 1000 !important;
+    font-family: Arial, sans-serif !important;
+    font-weight: bold !important;
+    color: #ff0000 !important;
+    font-size: 16px !important;
+    text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.8) !important;
+    white-space: nowrap !important;
+}
+
+/* Simple watermark shape styling */
+.simple-watermark {
+    fill: #ff0000 !important;
+    fill-opacity: 0.3 !important;
+    stroke: #000000 !important;
+    stroke-width: 2px !important;
+}
+
+/* Watermark marker styling */
+.watermark-marker {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.watermark-content {
+    transform: rotate(45deg) !important;
+    color: #ffffff !important;
+    font-weight: bold !important;
+    opacity: 0.6 !important;
+    pointer-events: none !important;
+    white-space: nowrap !important;
+    text-shadow: 
+        -1px -1px 0 #000000,
+        1px -1px 0 #000000,
+        -1px 1px 0 #000000,
+        1px 1px 0 #000000,
+        0 0 3px rgba(0,0,0,0.8) !important;
+    text-align: center !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* Professional company watermark styling */
+.company-watermark {
+    position: absolute !important;
+    pointer-events: none !important;
+    z-index: 1000 !important;
+    overflow: hidden !important;
+}
+
+.company-watermark div {
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) rotate(45deg) !important;
+    color: #3b82f6 !important;
+    font-size: 16px !important;
+    font-weight: bold !important;
+    opacity: 0.4 !important;
+    pointer-events: none !important;
+    white-space: nowrap !important;
+    text-shadow: 1px 1px 2px rgba(255,255,255,0.8) !important;
+    z-index: 1000 !important;
+    font-family: Arial, sans-serif !important;
+}
+
+/* Leaflet watermark icon styling */
+.company-watermark-icon {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.company-watermark-icon div {
+    transform: rotate(45deg) !important;
+    color: #ffffff !important;
+    font-weight: bold !important;
+    opacity: 0.3 !important;
+    pointer-events: none !important;
+    white-space: nowrap !important;
+    text-shadow: 1px 1px 2px rgba(255,255,255,0.8) !important;
+    text-align: center !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-family: Arial, sans-serif !important;
+    overflow: hidden !important;
+    width: 100% !important;
+    height: 100% !important;
+    box-sizing: border-box !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+}
+
+/* Static scaling - watermarks don't scale with zoom */
+.company-watermark-icon {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    transform: scale(1) !important;
+    transform-origin: center !important;
+}
+
+/* Ensure watermarks don't scale with map zoom */
+.leaflet-zoom-animated .company-watermark-icon {
+    transform: scale(1) !important;
+}
+
+/* Watermark popup styling */
+.watermark-popup {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+.watermark-popup .leaflet-popup-content-wrapper {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+.watermark-popup .leaflet-popup-content {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+}
+
+.watermark-popup .leaflet-popup-tip {
+    display: none !important;
+}
 /* ========================================
    PROJECT SPACE PLANNING TOOL - DESIGN SYSTEM
    Deep Blue Procore-Inspired Theme
@@ -320,6 +494,8 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-3);
 }
 
 .map-header h3 {
@@ -353,6 +529,61 @@ body {
 #map {
     height: 600px;
     width: 100%;
+}
+
+/* Current Project Banner */
+.current-project-banner {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #ffffff;
+    border: 1px solid var(--gray-200);
+    color: var(--gray-700);
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: var(--font-size-sm);
+    box-shadow: var(--shadow-sm);
+}
+.current-project-banner i {
+    color: var(--primary-600);
+}
+.current-project-banner .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: var(--font-size-xs);
+    color: var(--gray-500);
+    font-weight: 600;
+}
+.current-project-banner .value {
+    color: var(--primary-700);
+    font-weight: 700;
+}
+
+/* Global Error Banner */
+.global-error-banner {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: #fee2e2;
+    color: #b91c1c;
+    border-bottom: 2px solid #fecaca;
+    z-index: 2000;
+    padding: 10px 16px;
+    box-shadow: var(--shadow-lg);
+}
+.global-error-banner .banner-content {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+}
+.global-error-banner .banner-actions {
+    display: flex;
+    gap: 8px;
 }
 
 /* Drawing Status */

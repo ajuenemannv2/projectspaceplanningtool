@@ -8,12 +8,14 @@
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
     
     <!-- Custom CSS -->
     <link rel="stylesheet" href="styles.css" />
     
     <!-- Supabase -->
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="config/public-supabase-config.js"></script>
 </head>
 <body>
     <div class="container">
@@ -23,7 +25,7 @@
                 <h1>Project Space Planning Tool</h1>
                 <p>Select your project and draw your requested space area on the map below</p>
                 <div class="header-buttons">
-                    <a href="logistics-map.html" class="admin-link logistics-link">
+                    <a href="logistics-map.html" class="admin-link logistics-link" onclick="goToLogisticsMap(event)">
                         <i class="fas fa-map"></i> Logistics Map
                     </a>
                     <a href="admin.html" class="admin-link" onclick="openAdminPanel(event)">
@@ -72,10 +74,7 @@
                     </div>
                     
                     
-                    <div class="form-group">
-                        <label for="requestedArea">Requested Area (sq ft)</label>
-                        <input type="number" id="requestedArea" placeholder="Estimated square footage">
-                    </div>
+                    
                     
                     
                     <div class="form-group">
@@ -89,6 +88,11 @@
             <div class="map-container">
                 <div class="map-header">
                     <h3>Map View</h3>
+                    <div id="currentProjectBanner" class="current-project-banner" style="display:none;">
+                        <i class="fas fa-diagram-project"></i>
+                        <span class="eyebrow">Current project</span>
+                        <span class="value" id="currentProjectName"></span>
+                    </div>
                     <div class="map-controls">
                         <div class="drawing-controls">
                             <button id="clearDrawing" class="btn btn-secondary">Clear Drawing</button>
@@ -154,6 +158,17 @@
                     <button id="newRequest" class="btn btn-primary">Submit Another Request</button>
                     <button id="closeSuccess" class="btn btn-secondary">Close</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Global Error Banner -->
+    <div id="globalErrorBanner" class="global-error-banner">
+        <div class="banner-content">
+            <span id="globalErrorText">An unexpected error occurred.</span>
+            <div class="banner-actions">
+                <button id="globalErrorRetry" class="btn btn-secondary">Retry</button>
+                <button id="globalErrorDismiss" class="btn btn-secondary">Dismiss</button>
             </div>
         </div>
     </div>

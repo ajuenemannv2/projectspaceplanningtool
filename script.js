@@ -1,3 +1,25 @@
+// Build crane geometry as a MultiGeometry (pad polygon + sweep polygon + radius line)
+function buildCraneGeometry() {
+    try {
+        const features = [];
+        if (cranePadRect) {
+            const gj = cranePadRect.toGeoJSON();
+            features.push({ type: 'Feature', properties: { part: 'pad' }, geometry: gj.geometry });
+        }
+        if (craneSweepSector) {
+            const gj = craneSweepSector.toGeoJSON();
+            features.push({ type: 'Feature', properties: { part: 'sweep', sweepDeg: Math.round(Math.abs(craneSweepAccumDeg)) }, geometry: gj.geometry });
+        }
+        if (craneRadiusLine) {
+            const gj = craneRadiusLine.toGeoJSON();
+            features.push({ type: 'Feature', properties: { part: 'radius', radiusFt: Math.round(craneRadiusFeet) }, geometry: gj.geometry });
+        }
+        return { type: 'FeatureCollection', features };
+    } catch (e) {
+        console.warn('Failed to build crane geometry', e);
+        return null;
+    }
+}
 // Global variables
 let map;
 let drawnItems;
@@ -10,6 +32,102 @@ let currentProject = null; // Current project object
 // Projects will be loaded from database
 let PROJECTS = {};
 
+// Clean watermark system - creates watermarks that are bound to shapes and move with them
+function updateCurrentShapeWatermark() {
+    if (!currentShape) return;
+    
+    const companyName = document.getElementById('companyName')?.value;
+    
+    // Remove existing watermark
+    removeWatermarkFromShape(currentShape);
+    
+    if (companyName) {
+        // Create watermark as a custom marker that moves with the shape
+        createShapeWatermark(currentShape, companyName);
+    }
+}
+
+// Create a watermark that's bound to a specific shape
+function createShapeWatermark(shape, companyName) {
+    const bounds = shape.getBounds();
+    const center = bounds.getCenter();
+    
+    // Calculate appropriate font size based on shape size
+    const width = bounds.getEast() - bounds.getWest();
+    const height = bounds.getNorth() - bounds.getSouth();
+    const area = width * height;
+    
+    let fontSize = 16;
+    if (area < 0.00005) fontSize = 10;      // Very small shapes
+    else if (area < 0.0001) fontSize = 12;    // Small shapes
+    else if (area < 0.0005) fontSize = 14;  // Medium-small shapes
+    else if (area < 0.001) fontSize = 16;   // Medium shapes
+    else if (area < 0.005) fontSize = 18;    // Large shapes
+    else fontSize = 20;                      // Very large shapes
+    
+    // Create a custom marker that will move with the shape
+    const watermarkMarker = L.marker(center, {
+        icon: L.divIcon({
+            className: 'watermark-marker',
+            html: `
+                <div class="watermark-content" style="
+                    transform: rotate(45deg);
+                    color: #ffffff;
+                    font-size: ${fontSize}px;
+                    font-weight: bold;
+                    opacity: 0.6;
+                    pointer-events: none;
+                    white-space: nowrap;
+                    text-shadow: 
+                        -1px -1px 0 #000000,
+                        1px -1px 0 #000000,
+                        -1px 1px 0 #000000,
+                        1px 1px 0 #000000,
+                        0 0 3px rgba(0,0,0,0.8);
+                    text-align: center;
+                    background: transparent;
+                    border: none;
+                    box-shadow: none;
+                    margin: 0;
+                    padding: 0;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 100%;
+                    height: 100%;
+                ">${companyName}</div>
+            `,
+            iconSize: [120, 60],
+            iconAnchor: [60, 30]
+        })
+    });
+    
+    // Add to map
+    watermarkMarker.addTo(map);
+    
+    // Store reference for cleanup
+    if (!window.watermarkMarkers) {
+        window.watermarkMarkers = [];
+    }
+    window.watermarkMarkers.push(watermarkMarker);
+    
+    // Store the watermark marker on the shape for easy removal
+    shape._watermarkMarker = watermarkMarker;
+}
+
+// Remove watermark from a specific shape
+function removeWatermarkFromShape(shape) {
+    if (shape._watermarkMarker) {
+        map.removeLayer(shape._watermarkMarker);
+        shape._watermarkMarker = null;
+    }
+}
+
+// Clean up function
+function cleanupDebugElements() {
+    console.log('🧹 Cleaned up debugging elements');
+}
+
 // Default project configuration (fallback)
 const DEFAULT_PROJECT = {
     name: 'Default Project',
@@ -21,11 +139,8 @@ const DEFAULT_PROJECT = {
 let COMPANIES = [];
 let SPACE_CATEGORIES = [];
 
-// Supabase configuration
-const SUPABASE_CONFIG = {
-    url: 'https://yfewnhiugwmtdenxvrme.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlmZXduaGl1Z3dtdGRlbnh2cm1lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3MDI2MzEsImV4cCI6MjA3MzI3ODYzMX0.aawp6SPxxPNSGmOVQ4zfPM258mo48SZmtelTko7JkGg'
-};
+// Supabase configuration (provided by config/public-supabase-config.js)
+const SUPABASE_CONFIG = window.SUPABASE_CONFIG;
 
 // Initialize Supabase client (will be loaded via CDN)
 let supabaseClient = null;
@@ -36,8 +151,24 @@ const CONFIG = {
     defaultCenter: [45.5442515697061, -122.91389689455964], // Fallback to Ronler coordinates
     defaultZoom: 16, // Fallback zoom
     // Power Automate endpoint (you'll need to replace this with your actual endpoint)
-    powerAutomateEndpoint: 'https://your-tenant.flow.microsoft.com/webhook/your-webhook-id'
+    powerAutomateEndpoint: 'https://your-tenant.flow.microsoft.com/webhook/your-webhook-id',
+    // Zoom threshold where we switch between satellite and street
+    // Lower value => street view activates further out (smaller zoom numbers)
+    streetSwitchZoom: 17
 };
+
+// UI style settings
+function getUIStyleSettings() {
+    try {
+        const raw = localStorage.getItem('ui_style_settings');
+        const parsed = raw ? JSON.parse(raw) : {};
+        return parsed || {};
+    } catch(_) { return {}; }
+}
+function getStyleOrDefault(key, fallback) {
+    const s = getUIStyleSettings();
+    return (s && Object.prototype.hasOwnProperty.call(s, key) && s[key]) ? s[key] : fallback;
+}
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', async function() {
@@ -45,22 +176,56 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Show loading animation
     showLoadingAnimation();
+    // Global error banner elements
+    const errorBanner = document.getElementById('globalErrorBanner');
+    const errorText = document.getElementById('globalErrorText');
+    const errorRetry = document.getElementById('globalErrorRetry');
+    const errorDismiss = document.getElementById('globalErrorDismiss');
+    function showError(message, retryFn) {
+        if (errorText) errorText.textContent = message || 'An error occurred.';
+        if (errorBanner) errorBanner.style.display = 'block';
+        if (errorRetry) {
+            errorRetry.onclick = () => {
+                hideError();
+                try { retryFn && retryFn(); } catch(_) {}
+            };
+        }
+        if (errorDismiss) {
+            errorDismiss.onclick = hideError;
+        }
+    }
+    function hideError() {
+        if (errorBanner) errorBanner.style.display = 'none';
+    }
     
     try {
     console.log('L.GeometryUtil available:', typeof L !== 'undefined' && L.GeometryUtil);
     initializeMap();
     initializeEventListeners();
     
-        // Initialize Supabase client
-        if (typeof supabase !== 'undefined') {
+        // Initialize Supabase client with gating
+        if (typeof supabase === 'undefined') {
+            console.warn('⚠️ Supabase not loaded');
+            showError('Configuration error: Supabase library not loaded. Data cannot be fetched. Check network/CDN and reload.', () => window.location.reload());
+        } else if (!SUPABASE_CONFIG || !SUPABASE_CONFIG.url || !SUPABASE_CONFIG.anonKey) {
+            console.warn('⚠️ Supabase config missing');
+            showError('Configuration error: Supabase settings not found. Ensure config/public-supabase-config.js is included with a valid URL and anon key.', () => window.location.reload());
+        } else {
             supabaseClient = supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
             console.log('✅ Supabase client initialized');
-        } else {
-            console.warn('⚠️ Supabase not available, using fallback data');
         }
         
         // Load projects from database
-        await loadProjectsFromDatabase();
+        const loadProjectsAttempt = async () => {
+            await loadProjectsFromDatabase();
+        };
+        try {
+            await loadProjectsAttempt();
+        } catch (e) {
+            console.error('❌ Failed to load projects:', e);
+            showError('Can’t reach the database right now. Check your internet or credentials, then retry.', loadProjectsAttempt);
+            throw e;
+        }
         
         // Load admin data and populate dropdowns
     loadAdminData(); // Load admin data and integrate
@@ -69,41 +234,26 @@ document.addEventListener('DOMContentLoaded', async function() {
     populateCompanyDropdown();
     populateProjectDropdown(); // Populate project dropdown with database data
     
-    // Set default project selection and update map center
+    // Restore saved or deep-linked project selection and update map
     const projectSelect = document.getElementById('projectSelect');
     if (projectSelect) {
         const projectKeys = Object.keys(PROJECTS);
         if (projectKeys.length > 0) {
-            const defaultProjectKey = projectKeys[0];
-            projectSelect.value = defaultProjectKey;
-            console.log(`🔧 Set default project to ${defaultProjectKey}`);
-            
-            // Update map center to the default project
-            const defaultProject = PROJECTS[defaultProjectKey];
-            console.log(`🔧 Default project object:`, defaultProject);
-            console.log(`🔧 Default project coordinates:`, defaultProject?.coordinates);
-            
-            if (defaultProject && map && defaultProject.coordinates && defaultProject.coordinates.length === 2) {
-                const [lat, lng] = defaultProject.coordinates;
-                console.log(`🔧 Extracted lat/lng:`, lat, lng);
-                if (!isNaN(lat) && !isNaN(lng)) {
-                    console.log(`🔧 About to call map.setView with:`, defaultProject.coordinates, defaultProject.zoom);
-                    map.setView(defaultProject.coordinates, defaultProject.zoom);
-                    console.log(`🔧 Updated map center to ${defaultProjectKey}:`, defaultProject.coordinates);
-                } else {
-                    console.warn(`⚠️ Invalid coordinates for default project:`, defaultProject.coordinates);
-                }
-            } else {
-                console.warn(`⚠️ Cannot set map view - missing data:`, {
-                    defaultProject: !!defaultProject,
-                    map: !!map,
-                    coordinates: defaultProject?.coordinates,
-                    coordinatesLength: defaultProject?.coordinates?.length
-                });
+            const params = new URLSearchParams(window.location.search);
+            const savedProject = params.get('project') || localStorage.getItem('selected_project_id');
+            const savedZoom = params.get('zoom') || localStorage.getItem('selected_project_zoom');
+            const firstKey = projectKeys[0];
+            const targetKey = (savedProject && PROJECTS[savedProject]) ? savedProject : firstKey;
+            projectSelect.value = targetKey;
+            try { navigateToProject(targetKey); } catch(_) {}
+            updateCurrentProjectBanner(targetKey);
+            // Apply zoom override if provided
+            if (savedZoom && map) {
+                const z = parseInt(savedZoom, 10);
+                if (!isNaN(z)) { try { map.setZoom(z); } catch(_) {} }
             }
-            
-            // Load phases for the default project
-            populatePhaseCheckboxes(defaultProjectKey);
+            // Load phases for the selected (or default) project
+            populatePhaseCheckboxes(targetKey);
         }
     }
     
@@ -137,9 +287,16 @@ function initializeMap() {
         maxZoom: 19
     });
     
-    // Add layer control for switching between satellite and street view
+    // Hybrid tile layer (satellite with labels)
+    const hybridLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+        attribution: '© Google Hybrid',
+        maxZoom: 22
+    });
+    
+    // Add layer control for switching between tile sets
     const baseMaps = {
         "Satellite": satelliteLayer,
+        "Hybrid": hybridLayer,
         "Street": streetLayer
     };
     
@@ -152,20 +309,22 @@ function initializeMap() {
     // Add real-time measurement system
     addRealTimeMeasurements();
     
-    // Auto-switch between satellite and street view based on zoom level
+    // Auto-switch between satellite/hybrid and street view based on zoom level
     map.on('zoomend', function() {
         const currentZoom = map.getZoom();
-        const currentLayer = map.hasLayer(satelliteLayer) ? 'satellite' : 'street';
+        const currentLayer = map.hasLayer(satelliteLayer) ? 'satellite' : (map.hasLayer(hybridLayer) ? 'hybrid' : 'street');
+        const switchZoom = CONFIG?.streetSwitchZoom ?? 15; // lower => switch to street earlier (more zoomed out)
         
-        // If we're on street view and trying to zoom beyond its limit, switch to satellite
-        if (currentLayer === 'street' && currentZoom >= 19) {
+        // If we're on street view and zooming in beyond threshold, switch to satellite
+        if (currentLayer === 'street' && currentZoom > switchZoom) {
             map.removeLayer(streetLayer);
             satelliteLayer.addTo(map);
             updateDrawingStatus('Switched to satellite view for higher zoom');
         }
-        // If we're on satellite view and zoom out below street view's max, switch back to street
-        else if (currentLayer === 'satellite' && currentZoom < 19) {
-            map.removeLayer(satelliteLayer);
+        // If we're on satellite view and zoom out to or below threshold, switch back to street
+        else if ((currentLayer === 'satellite' || currentLayer === 'hybrid') && currentZoom <= switchZoom) {
+            if (map.hasLayer(satelliteLayer)) map.removeLayer(satelliteLayer);
+            if (map.hasLayer(hybridLayer)) map.removeLayer(hybridLayer);
             streetLayer.addTo(map);
             updateDrawingStatus('Switched to street view');
         }
@@ -174,6 +333,9 @@ function initializeMap() {
     // Initialize drawing layer
     drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
+    // Initialize cranes layer (separate from staging shapes)
+    window.cranesLayer = new L.FeatureGroup();
+    map.addLayer(window.cranesLayer);
     
     // Initialize drawing controls with custom distance measurements
     const drawControl = new L.Control.Draw({
@@ -227,6 +389,12 @@ function initializeMap() {
 
     // Add a custom Fence button next to polygon/rectangle
     addFenceButtonToToolbar();
+    // Add Crane tool button
+    addCraneButtonToToolbar();
+    // Try injecting caution pattern shortly after map init
+    setTimeout(() => { try { injectCautionPattern(); } catch(_) {} }, 250);
+    // Try injecting caution pattern shortly after map init
+    setTimeout(injectCautionPattern, 250);
     
     // Drawing event listeners
     map.on('draw:created', onShapeCreated);
@@ -362,6 +530,7 @@ function navigateToProject(projectKey) {
     if (project) {
         selectedProject = projectKey;
         currentProject = project;
+        try { localStorage.setItem('selected_project_id', String(projectKey)); } catch(_) {}
         
         // Validate coordinates before setting map view
         if (project.coordinates && project.coordinates.length === 2) {
@@ -386,6 +555,32 @@ function navigateToProject(projectKey) {
         
         // Load saved spaces for this project
         loadProjectSpaces();
+    }
+}
+
+// Navigate to Logistics Map carrying the selected project across pages
+function goToLogisticsMap(event) {
+    if (event) event.preventDefault();
+    try {
+        const projectId = selectedProject || document.getElementById('projectSelect')?.value;
+        if (projectId) localStorage.setItem('selected_project_id', String(projectId));
+        // capture current zoom to keep presentation parity
+        let zoom = null;
+        try {
+            zoom = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : null;
+        } catch(_) {}
+        if (!zoom && currentProject && currentProject.zoom) {
+            zoom = currentProject.zoom;
+        } else if (!zoom) {
+            zoom = CONFIG?.defaultZoom || 16;
+        }
+        if (zoom) {
+            localStorage.setItem('selected_project_zoom', String(zoom));
+        }
+        const url = projectId ? `logistics-map.html?project=${encodeURIComponent(projectId)}${zoom ? `&zoom=${encodeURIComponent(zoom)}` : ''}` : 'logistics-map.html';
+        window.location.href = url;
+    } catch(_) {
+        window.location.href = 'logistics-map.html';
     }
 }
 
@@ -747,6 +942,21 @@ async function populatePhaseCheckboxes(projectId) {
         });
         
         console.log('✅ Phase checkboxes populated:', phases.length);
+        // Restore previously selected phases for this project if available
+        try {
+            const saved = localStorage.getItem('selected_phase_ids');
+            const savedProject = localStorage.getItem('selected_project_id');
+            const ids = saved ? JSON.parse(saved) : [];
+            if (String(savedProject) === String(projectId) && Array.isArray(ids) && ids.length > 0) {
+                ids.forEach(id => {
+                    const cb = document.getElementById(`phase_${id}`);
+                    if (cb) cb.checked = true;
+                });
+            }
+        } catch(_) {}
+
+        // Ensure map reflects restored selections immediately
+        try { loadProjectSpaces(); } catch(_) {}
         
     } catch (error) {
         console.error('❌ Error populating phase checkboxes:', error);
@@ -1036,6 +1246,19 @@ function openAdminPanel(event) {
     window.location.href = 'admin.html';
 }
 
+// Update current project banner
+function updateCurrentProjectBanner(projectKey) {
+    try {
+        const el = document.getElementById('currentProjectBanner');
+        const nameEl = document.getElementById('currentProjectName');
+        if (!el) return;
+        const proj = PROJECTS && projectKey ? PROJECTS[projectKey] : null;
+        if (!proj) { el.style.display = 'none'; return; }
+        if (nameEl) nameEl.textContent = proj.name;
+        el.style.display = 'block';
+    } catch(_) {}
+}
+
 
 // Log activity to admin panel
 function logActivityToAdmin(action, details) {
@@ -1153,6 +1376,13 @@ function onShapeCreated(e) {
     console.log('Shape bounds:', layer.getBounds());
     console.log('Shape center:', layer.getCenter ? layer.getCenter() : 'No center method');
     
+    // Apply watermark if company is selected
+    const companyName = document.getElementById('companyName')?.value;
+    if (companyName) {
+        console.log('🏷️ Applying watermark for company:', companyName);
+        createShapeWatermark(layer, companyName);
+    }
+    
     // Disable drawing controls after creating a shape
     disableDrawingControls();
     
@@ -1163,6 +1393,7 @@ function onShapeCreated(e) {
     layer.bindPopup(`
         <strong>Drawn Area</strong><br>
         Area: ${areaSqFt} sq ft<br>
+        ${companyName ? `Company: ${companyName}<br>` : ''}
         Double-click to edit | Use Undo to remove
     `);
     
@@ -1292,11 +1523,7 @@ function onShapeCreated(e) {
     updateDrawingStatus(`Shape created - Area: ${areaSqFt} sq ft`);
     updateSubmitButton();
     
-    // Auto-fill area field if empty
-    const areaField = document.getElementById('requestedArea');
-    if (!areaField.value) {
-        areaField.value = areaSqFt;
-    }
+    // Removed requestedArea field
 }
 
 function onShapeEdited(e) {
@@ -1311,8 +1538,7 @@ function onShapeEdited(e) {
             Click to edit or delete
         `);
         
-        // Update area field
-        document.getElementById('requestedArea').value = areaSqFt;
+        // Removed requestedArea field
         
         // Update distance labels after editing
         addDistanceLabels(layer);
@@ -1374,8 +1600,7 @@ function onShapeDeleted(e) {
     updateSubmitButton();
     updateUndoButton();
     
-    // Clear area field
-    document.getElementById('requestedArea').value = '';
+    // Removed requestedArea field
 }
 
 
@@ -1396,6 +1621,7 @@ let lastFinishMarker = null;  // Clickable marker on last vertex (finish open)
 let isFenceModeActive = false; // Custom fence tool active
 let fenceRealtimeMarkers = []; // Realtime labels during fence drawing
 let fenceMouseDistanceMarker = null; // Realtime label for last->mouse segment
+let isShiftDown = false; // Track Shift modifier for snapping
 
 // Real-time measurement system
 function addRealTimeMeasurements() {
@@ -1412,8 +1638,62 @@ function addRealTimeMeasurements() {
     
     // Listen for Enter key to finish drawing (especially for fences)
     document.addEventListener('keydown', onKeyDown);
+    // Track modifier keys for snapping
+    document.addEventListener('keydown', function(e){ if (e.key === 'Shift') { isShiftDown = true; } });
+    document.addEventListener('keyup', function(e){ if (e.key === 'Shift') { isShiftDown = false; } });
     
     console.log('Real-time measurement system initialized');
+}
+
+// --- Angle snapping helpers ---
+function maybeSnapLatLngFrom(lastLatLng, targetLatLng, domEventOrNull, incrementDegrees = 15) {
+    try {
+        const shiftActive = (domEventOrNull && domEventOrNull.shiftKey) || isShiftDown;
+        if (!shiftActive || !lastLatLng || !targetLatLng || !map) return targetLatLng;
+        const lastPt = map.latLngToContainerPoint(lastLatLng);
+        const tgtPt = map.latLngToContainerPoint(targetLatLng);
+        const dx = tgtPt.x - lastPt.x;
+        const dy = tgtPt.y - lastPt.y;
+        if (dx === 0 && dy === 0) return targetLatLng;
+        const angle = Math.atan2(dy, dx);
+        const inc = (Math.PI / 180) * incrementDegrees;
+        const snappedAngle = Math.round(angle / inc) * inc;
+        const dist = Math.hypot(dx, dy);
+        const snappedDx = dist * Math.cos(snappedAngle);
+        const snappedDy = dist * Math.sin(snappedAngle);
+        const snappedPt = L.point(lastPt.x + snappedDx, lastPt.y + snappedDy);
+        return map.containerPointToLatLng(snappedPt);
+    } catch(_) {
+        return targetLatLng;
+    }
+}
+
+// --- Drawing mode UX helpers ---
+function ensureDrawingModeStylesInjected() {
+    if (document.getElementById('drawing-mode-style')) return;
+    const style = document.createElement('style');
+    style.id = 'drawing-mode-style';
+    style.textContent = `
+        /* Crosshair cursor while drawing */
+        .drawing-mode .leaflet-container { cursor: crosshair !important; }
+        /* Ensure all interactive vectors show crosshair during drawing */
+        .drawing-mode .leaflet-interactive { cursor: crosshair !important; }
+        /* Disable interactions with saved layers while drawing */
+        .drawing-mode .saved-space-layer { pointer-events: none !important; }
+    `;
+    document.head.appendChild(style);
+}
+
+function setDrawingModeActive(active) {
+    try {
+        ensureDrawingModeStylesInjected();
+        const root = document.body;
+        if (active) {
+            root.classList.add('drawing-mode');
+        } else {
+            root.classList.remove('drawing-mode');
+        }
+    } catch(_) {}
 }
 
 function onDrawStart(e) {
@@ -1425,6 +1705,7 @@ function onDrawStart(e) {
     }
     
     console.log('onDrawStart called', e);
+    setDrawingModeActive(true);
     isDrawing = true;
     currentDrawingLayer = e.layer;
     
@@ -2000,7 +2281,13 @@ function onMapClick(e) {
     console.log('Map click during drawing:', e.latlng);
     
     // Add the clicked point to our vertex list
-    drawingVertices.push(e.latlng);
+    if (drawingVertices.length > 0) {
+        const lastPoint = drawingVertices[drawingVertices.length - 1];
+        const snapped = maybeSnapLatLngFrom(lastPoint, e.latlng, e.originalEvent);
+        drawingVertices.push(snapped);
+    } else {
+        drawingVertices.push(e.latlng);
+    }
     console.log('Total vertices from clicks:', drawingVertices.length);
     
     // Update our polyline (only if it exists - for polygon drawing)
@@ -2072,7 +2359,7 @@ function onMouseMove(e) {
     if (typeof isFenceModeActive !== 'undefined' && isFenceModeActive) return;
     if (!isDrawing || (!drawingPolyline && !currentDrawingLayer)) return;
     
-    const mouseLatLng = e.latlng;
+    let mouseLatLng = e.latlng;
     
     // Use our tracked vertices instead of polyline coordinates
     if (drawingVertices.length === 0) {
@@ -2085,6 +2372,8 @@ function onMouseMove(e) {
     
     // Update mouse line (from last vertex to mouse)
     const lastPoint = drawingVertices[drawingVertices.length - 1];
+    // Snap the mouse preview when Shift is held
+    mouseLatLng = maybeSnapLatLngFrom(lastPoint, mouseLatLng, e.originalEvent);
     if (mouseLine) {
     mouseLine.setLatLngs([lastPoint, mouseLatLng]);
     }
@@ -2110,7 +2399,7 @@ function onMouseMove(e) {
         let borderColor = '#0078d4'; // Blue for all
         let textColor = '#0078d4';
         
-        const displayText = showCloseIndicator ? 'Close Fence' : `${distance.toFixed(1)} ft`;
+    const displayText = showCloseIndicator ? 'Close Fence' : `${distance.toFixed(1)} ft`;
         const displayColor = showCloseIndicator ? '#28a745' : textColor; // Green for close indicator
         const displayBorder = showCloseIndicator ? '#28a745' : borderColor;
         
@@ -2286,6 +2575,7 @@ function updateDrawingMeasurements(latLngs) {
 function onDrawStop(e) {
     console.log('onDrawStop called:', e);
     updateDrawingStatus('Drawing completed');
+    setDrawingModeActive(false);
     
     // Use the comprehensive cleanup function
     cleanupDrawingState();
@@ -2301,7 +2591,8 @@ function undoLastAction() {
         if (lastAction.action === 'draw') {
             // Remove the last drawn shape
             const shapeToRemove = lastAction.shape;
-            drawnItems.removeLayer(shapeToRemove);
+            try { drawnItems.removeLayer(shapeToRemove); } catch(_) {}
+            try { window.cranesLayer.removeLayer(shapeToRemove); } catch(_) {}
             
             // Remove distance labels from the shape
             if (shapeToRemove.distanceLabels) {
@@ -2315,11 +2606,36 @@ function undoLastAction() {
                 map.removeLayer(marker);
             });
             drawingMarkers = [];
+
+            // Remove rectangle measurements (final and realtime)
+            try {
+                if (window.rectangleMeasurements) {
+                    window.rectangleMeasurements.forEach(m => { try { map.removeLayer(m); } catch(_){} });
+                    window.rectangleMeasurements = [];
+                }
+                if (window.realtimeRectangleMeasurements) {
+                    window.realtimeRectangleMeasurements.forEach(m => { try { map.removeLayer(m); } catch(_){} });
+                    window.realtimeRectangleMeasurements = [];
+                }
+            } catch(_) {}
+
+            // Remove any remaining fence realtime markers
+            try {
+                if (typeof fenceRealtimeMarkers !== 'undefined' && fenceRealtimeMarkers && fenceRealtimeMarkers.length) {
+                    fenceRealtimeMarkers.forEach(m => { try { map.removeLayer(m); } catch(_){} });
+                    fenceRealtimeMarkers = [];
+                }
+                if (typeof fenceMouseDistanceMarker !== 'undefined' && fenceMouseDistanceMarker) {
+                    try { map.removeLayer(fenceMouseDistanceMarker); } catch(_) {}
+                    fenceMouseDistanceMarker = null;
+                }
+            } catch(_) {}
             
             // Update current shape if it was the one removed
             if (currentShape === shapeToRemove) {
                 currentShape = null;
-                document.getElementById('requestedArea').value = '';
+                // Remove watermark if it exists
+                removeWatermarkFromShape(shapeToRemove);
             }
             
             // Re-enable drawing controls since no shape exists now
@@ -2416,6 +2732,19 @@ function initializeEventListeners() {
     // Button event listeners
     document.getElementById('clearDrawing').addEventListener('click', clearDrawing);
     document.getElementById('resetView').addEventListener('click', resetMapView);
+    // Project change updates banner
+    const projectSelect = document.getElementById('projectSelect');
+    if (projectSelect) {
+        projectSelect.addEventListener('change', function(e) {
+            updateCurrentProjectBanner(e.target.value);
+            // Persist selection immediately for cross-page continuity
+            try {
+                localStorage.setItem('selected_project_id', String(e.target.value));
+                const z = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : (currentProject?.zoom || CONFIG?.defaultZoom || 16);
+                if (z) localStorage.setItem('selected_project_zoom', String(z));
+            } catch(_) {}
+        });
+    }
     document.getElementById('previewRequest').addEventListener('click', previewRequest);
     document.getElementById('submitRequest').addEventListener('click', submitRequest);
     document.getElementById('saveSpace').addEventListener('click', saveSpace);
@@ -2463,6 +2792,12 @@ function initializeEventListeners() {
         }
     });
     
+    // Company selection event listener for watermark updates
+    document.getElementById('companyName').addEventListener('change', function() {
+        console.log('🏢 Company selection changed:', this.value);
+        updateCurrentShapeWatermark();
+    });
+    
     // Phase selection event listeners (for filtering saved spaces)
     let phaseChangeTimeout;
     document.addEventListener('change', function(e) {
@@ -2473,6 +2808,15 @@ function initializeEventListeners() {
             phaseChangeTimeout = setTimeout(() => {
                 loadProjectSpaces();
             }, 300);
+            // Persist selected phases for cross-page continuity
+            try {
+                const selected = Array.from(document.querySelectorAll('input[name="projectPhases"]:checked')).map(cb => parseInt(cb.value));
+                localStorage.setItem('selected_phase_ids', JSON.stringify(selected));
+                const projectSelectEl = document.getElementById('projectSelect');
+                if (projectSelectEl && projectSelectEl.value) {
+                    localStorage.setItem('selected_project_id', String(projectSelectEl.value));
+                }
+            } catch(_) {}
         }
     });
     
@@ -2505,10 +2849,9 @@ function validateForm() {
     
     // Email and date validation removed - fields no longer exist
     
-    // Check if shape is drawn
-    if (!currentShape) {
-        isValid = false;
-    }
+    // Check if there is a drawable selection to save: currentShape OR current crane group
+    const hasDrawable = !!currentShape || (!!currentCraneGroup && isCraneModeActive === false && craneStage === 'idle');
+    if (!hasDrawable) { isValid = false; }
     
     updateSubmitButton(isValid);
     return isValid;
@@ -2636,7 +2979,8 @@ function addFenceButtonToToolbar() {
         btn.href = '#';
         btn.title = 'Draw a fence (open or closed)';
         btn.className = 'leaflet-draw-draw-fence';
-        btn.textContent = 'Fence';
+        btn.innerHTML = '⛓️';
+        btn.style.fontSize = '18px';
         btn.style.cssText = `
             background-color: #f8f9fa !important;
             border: 1px solid #ccc !important;
@@ -2648,7 +2992,18 @@ function addFenceButtonToToolbar() {
             border-radius: 4px !important;
             margin-left: 4px !important;
             font-weight: 600 !important;
+            position: relative !important;
         `;
+        
+        // Hide any Leaflet-added content
+        btn.addEventListener('DOMNodeInserted', function() {
+            const children = btn.children;
+            for (let i = 0; i < children.length; i++) {
+                if (children[i].tagName !== 'DIV') {
+                    children[i].style.display = 'none';
+                }
+            }
+        });
 
         // Prevent map click propagation from this control
         try {
@@ -2683,6 +3038,12 @@ function addFenceButtonToToolbar() {
 }
 
 function startFenceDrawing() {
+    // Prevent drawing if a shape already exists
+    if (currentShape) {
+        console.log('Fence drawing prevented - shape already exists');
+        updateDrawingStatus('Remove existing shape before drawing a new one');
+        return;
+    }
     // Reset state
     isDrawing = true;
     drawingVertices = [];
@@ -2734,6 +3095,7 @@ function startFenceDrawing() {
 
     // Set crosshair cursor to indicate drawing mode
     try { map.getContainer().style.cursor = 'crosshair'; } catch(_) {}
+    setDrawingModeActive(true);
 }
 
 function stopFenceDrawing() {
@@ -2752,11 +3114,16 @@ function stopFenceDrawing() {
 
     // Restore cursor
     try { map.getContainer().style.cursor = ''; } catch(_) {}
+    setDrawingModeActive(false);
 }
 
 function onFenceMapClick(e) {
     if (!isFenceModeActive) return;
-    const latlng = e.latlng;
+    let latlng = e.latlng;
+    if (drawingVertices.length > 0) {
+        const last = drawingVertices[drawingVertices.length - 1];
+        latlng = maybeSnapLatLngFrom(last, latlng, e.originalEvent);
+    }
     // Map clicks always add vertices; finishing happens only via the finish markers or Enter
     if (!drawingPolyline) {
         drawingPolyline = L.polyline([], { color: '#ffd700', weight: 3, opacity: 0.8 }).addTo(map);
@@ -2784,18 +3151,20 @@ function onFenceMapClick(e) {
 function onFenceMouseMove(e) {
     if (!isFenceModeActive || drawingVertices.length === 0) return;
     const last = drawingVertices[drawingVertices.length - 1];
+    // Snap preview when Shift is held
+    const snappedLatLng = maybeSnapLatLngFrom(last, e.latlng, e.originalEvent);
     if (!mouseMarker) {
         mouseMarker = L.circleMarker([0,0], { radius: 4, color: '#ffd700', fillColor: '#ffd700', fillOpacity: 0.8, weight: 2 }).addTo(map);
     }
     if (!mouseLine) {
         mouseLine = L.polyline([], { color: '#ffd700', weight: 2, dashArray: '5,5', opacity: 0.8 }).addTo(map);
     }
-    try { mouseMarker.setLatLng(e.latlng); } catch(_) {}
-    try { mouseLine.setLatLngs([last, e.latlng]); } catch(_) {}
+    try { mouseMarker.setLatLng(snappedLatLng); } catch(_) {}
+    try { mouseLine.setLatLngs([last, snappedLatLng]); } catch(_) {}
 
     // Realtime distance label from last vertex to mouse
-    const dist = calculateDistanceInFeet(last, e.latlng);
-    const mid = L.latLng((last.lat + e.latlng.lat)/2, (last.lng + e.latlng.lng)/2);
+    const dist = calculateDistanceInFeet(last, snappedLatLng);
+    const mid = L.latLng((last.lat + snappedLatLng.lat)/2, (last.lng + snappedLatLng.lng)/2);
     const icon = L.divIcon({
         className: 'distance-label',
         html: `<div style="background: rgba(255,255,255,0.9); border: 2px dashed #0078d4; border-radius: 6px; padding: 4px 8px; font-size: 11px; font-weight: 600; color: #0078d4; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.2); pointer-events: none;">${dist.toFixed(1)} ft</div>`,
@@ -2921,6 +3290,17 @@ function clearDrawing() {
     
     drawingMarkers.forEach(marker => map.removeLayer(marker));
     drawingMarkers = [];
+    // Clear any rectangle measurements (final and realtime)
+    try {
+        if (window.rectangleMeasurements) {
+            window.rectangleMeasurements.forEach(m => { try { map.removeLayer(m); } catch(_){} });
+            window.rectangleMeasurements = [];
+        }
+        if (window.realtimeRectangleMeasurements) {
+            window.realtimeRectangleMeasurements.forEach(m => { try { map.removeLayer(m); } catch(_){} });
+            window.realtimeRectangleMeasurements = [];
+        }
+    } catch(_) {}
     
     // Reset drawing state
     isDrawing = false;
@@ -2963,6 +3343,454 @@ function updateDrawingStatus(message, type = 'ready') {
     } else if (type === 'error') {
         statusDot.classList.add('error');
     }
+}
+
+// ===================== Crane Tool =====================
+let isCraneModeActive = false;
+let craneStage = 'idle'; // 'pad' | 'radius' | 'sweep'
+let cranePadFirstCorner = null;
+let cranePadRect = null;
+let cranePadCenter = null;
+let craneRadiusLine = null;
+let craneRadiusMeters = 0;
+let craneRadiusFeet = 0;
+let craneStartAzimuthRad = 0; // radians
+let craneStartDeg = 0;
+let craneRadiusPx = 0; // screen-space radius for perfect visual match
+let craneSweepAccumDeg = 0; // accumulated sweep degrees (-360..360)
+let craneLastAngleDeg = null; // last observed angle during sweep
+let craneRadiusLockPx = null; // when Shift held in radius stage, lock length in pixels
+let craneSweepSector = null;
+let craneRealtimeLabels = [];
+let currentCraneGroup = null;
+
+function addCraneButtonToToolbar() {
+    setTimeout(() => {
+        const toolbar = document.querySelector('.leaflet-draw-toolbar');
+        if (!toolbar) return;
+        const btn = document.createElement('a');
+        btn.href = '#';
+        btn.title = 'Crane (Pad → Radius → Sweep)';
+        btn.className = 'leaflet-draw-draw-crane';
+        btn.innerHTML = '🏗️';
+        btn.style.fontSize = '18px';
+        btn.style.cssText = `
+            background-color: #f8f9fa !important;
+            border: 1px solid #ccc !important;
+            color: #333 !important;
+            width: 52px !important;
+            height: 30px !important;
+            line-height: 30px !important;
+            text-align: center !important;
+            border-radius: 4px !important;
+            margin-left: 4px !important;
+            font-weight: 600 !important;
+            position: relative !important;
+        `;
+        
+        // Hide any Leaflet-added content
+        btn.addEventListener('DOMNodeInserted', function() {
+            const children = btn.children;
+            for (let i = 0; i < children.length; i++) {
+                if (children[i].tagName !== 'DIV') {
+                    children[i].style.display = 'none';
+                }
+            }
+        });
+        
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (isCraneModeActive) {
+                stopCraneDrawing();
+                btn.style.opacity = '1';
+            } else {
+                startCraneDrawing();
+                btn.style.opacity = '0.8';
+            }
+        });
+        toolbar.appendChild(btn);
+    }, 180);
+}
+
+function startCraneDrawing() {
+    if (currentShape) {
+        updateDrawingStatus('Remove existing shape before starting a crane');
+        return;
+    }
+    isCraneModeActive = true;
+    setDrawingModeActive(true);
+    craneStage = 'pad';
+    cranePadFirstCorner = null;
+    cranePadRect = null;
+    cranePadCenter = null;
+    craneRadiusLine = null;
+    craneRadiusMeters = 0;
+    craneRadiusFeet = 0;
+    craneStartAzimuthRad = 0;
+    craneSweepSector = null;
+    craneRealtimeLabels = [];
+    currentCraneGroup = new L.FeatureGroup();
+    window.cranesLayer.addLayer(currentCraneGroup);
+    updateDrawingStatus('Draw Crane Pad/Footprint', 'drawing');
+    map.on('click', onCraneClick);
+    map.on('mousemove', onCraneMouseMove);
+    document.addEventListener('keydown', onCraneKeyDown);
+}
+
+function stopCraneDrawing() {
+    isCraneModeActive = false;
+    craneStage = 'idle';
+    map.off('click', onCraneClick);
+    map.off('mousemove', onCraneMouseMove);
+    document.removeEventListener('keydown', onCraneKeyDown);
+    clearCraneRealtimeLabels();
+    setDrawingModeActive(false);
+    updateDrawingStatus('Ready');
+}
+
+function onCraneKeyDown(e) {
+    if (!isCraneModeActive) return;
+    if (e.key === 'Escape') {
+        // Cancel and cleanup
+        try { if (currentCraneGroup) { window.cranesLayer.removeLayer(currentCraneGroup); } } catch(_) {}
+        currentCraneGroup = null;
+        stopCraneDrawing();
+    } else if ((e.key === 'Enter' || e.key === ' ') && craneStage === 'sweep' && craneSweepSector) {
+        finalizeCrane();
+    }
+}
+
+function onCraneClick(e) {
+    if (!isCraneModeActive) return;
+    if (craneStage === 'pad') {
+        if (!cranePadFirstCorner) {
+            cranePadFirstCorner = e.latlng;
+        } else {
+            // finalize rect
+            const second = e.latlng;
+            const bounds = L.latLngBounds(cranePadFirstCorner, second);
+            if (cranePadRect) { try { currentCraneGroup.removeLayer(cranePadRect); } catch(_){} }
+            cranePadRect = L.rectangle(bounds, { 
+                color: '#1f2937',  // Dark grey for crane pad
+                weight: 2,
+                fillColor: '#1f2937',
+                fillOpacity: 0.6
+            });
+            currentCraneGroup.addLayer(cranePadRect);
+            cranePadCenter = bounds.getCenter();
+            // advance
+            craneStage = 'radius';
+            updateDrawingStatus('Draw Crane Swing Radius', 'drawing');
+        }
+    } else if (craneStage === 'radius') {
+        // Fix radius. If Shift was used during radius stage, keep the locked length
+        let finalTarget = e.latlng;
+        if (craneRadiusLockPx !== null) {
+            const centerPt = map.latLngToContainerPoint(cranePadCenter);
+            const mousePt = map.latLngToContainerPoint(e.latlng);
+            const ang = Math.atan2(mousePt.y - centerPt.y, mousePt.x - centerPt.x);
+            const inc = Math.PI / 36; // 5° increments
+            const snapped = Math.round(ang / inc) * inc;
+            const snapPt = L.point(
+                centerPt.x + craneRadiusLockPx * Math.cos(snapped),
+                centerPt.y + craneRadiusLockPx * Math.sin(snapped)
+            );
+            finalTarget = map.containerPointToLatLng(snapPt);
+        }
+        setCraneRadius(finalTarget);
+        craneStartDeg = Math.round(radToDeg(craneStartAzimuthRad));
+        craneLastAngleDeg = craneStartDeg;
+        craneSweepAccumDeg = 0;
+        craneStage = 'sweep';
+        updateDrawingStatus('Draw Crane Swing Sweep', 'drawing');
+    } else if (craneStage === 'sweep') {
+        finalizeCrane();
+    }
+}
+
+function onCraneMouseMove(e) {
+    if (!isCraneModeActive) return;
+    if (craneStage === 'pad') {
+        if (!cranePadFirstCorner) return;
+        const bounds = L.latLngBounds(cranePadFirstCorner, e.latlng);
+        if (!cranePadRect) {
+            cranePadRect = L.rectangle(bounds, { 
+                color: '#1f2937',  // Dark grey for crane pad
+                weight: 2,
+                fillColor: '#1f2937',
+                fillOpacity: 0.6
+            });
+            currentCraneGroup.addLayer(cranePadRect);
+        } else {
+            cranePadRect.setBounds(bounds);
+        }
+        // Measure
+        clearCraneRealtimeLabels();
+        const ne = bounds.getNorthEast();
+        const sw = bounds.getSouthWest();
+        const widthFeet = calculateDistanceInFeet({lat: ne.lat, lng: sw.lng}, {lat: ne.lat, lng: ne.lng});
+        const heightFeet = calculateDistanceInFeet({lat: sw.lat, lng: ne.lng}, {lat: ne.lat, lng: ne.lng});
+        const areaFeet = Math.round(widthFeet * heightFeet);
+        const center = bounds.getCenter();
+        craneRealtimeLabels.push(addCraneLabel(center.lat, center.lng, `${Math.round(widthFeet)} ft × ${Math.round(heightFeet)} ft\n${areaFeet} sq ft`));
+    } else if (craneStage === 'radius' && cranePadCenter) {
+        // If Shift is down, lock the length to the first Shift press and snap angle to 5°
+        let target = e.latlng;
+        const shiftActive = (e.originalEvent && e.originalEvent.shiftKey) || isShiftDown;
+        const centerPt = map.latLngToContainerPoint(cranePadCenter);
+        const mousePt = map.latLngToContainerPoint(e.latlng);
+        if (shiftActive) {
+            // Initialize lock length once
+            if (craneRadiusLockPx === null) {
+                craneRadiusLockPx = Math.hypot(mousePt.x - centerPt.x, mousePt.y - centerPt.y);
+            }
+            // Snap angle to 5° increments but keep length locked
+            const ang = Math.atan2(mousePt.y - centerPt.y, mousePt.x - centerPt.x);
+            const inc = Math.PI / 36; // 5 degrees
+            const snapped = Math.round(ang / inc) * inc;
+            const snapPt = L.point(
+                centerPt.x + craneRadiusLockPx * Math.cos(snapped),
+                centerPt.y + craneRadiusLockPx * Math.sin(snapped)
+            );
+            target = map.containerPointToLatLng(snapPt);
+        } else {
+            craneRadiusLockPx = null;
+            // No lock: allow free move with optional 1° snap if Shift-free snapping is desired elsewhere
+        }
+        setCraneRadius(target, true);
+    } else if (craneStage === 'sweep' && cranePadCenter && craneRadiusMeters > 0) {
+        drawCraneSector(e.latlng, true);
+    }
+}
+
+function setCraneRadius(targetLatLng, previewOnly = false) {
+    clearCraneRealtimeLabels();
+    if (!cranePadCenter) return;
+    // Create/update radius line
+    if (!craneRadiusLine) {
+        craneRadiusLine = L.polyline([cranePadCenter, targetLatLng], { 
+            color: '#1f2937',  // Dark grey for radius line
+            weight: 3,
+            dashArray: '5, 5'
+        });
+        currentCraneGroup.addLayer(craneRadiusLine);
+    } else {
+        craneRadiusLine.setLatLngs([cranePadCenter, targetLatLng]);
+    }
+    // Distance and azimuth
+    craneRadiusFeet = calculateDistanceInFeet(cranePadCenter, targetLatLng);
+    craneRadiusMeters = craneRadiusFeet / 3.28084;
+    craneStartAzimuthRad = bearingRad(cranePadCenter, targetLatLng);
+    // Screen-space radius in pixels for exact visual match
+    try {
+        const c = map.latLngToContainerPoint(cranePadCenter);
+        const t = map.latLngToContainerPoint(targetLatLng);
+        craneRadiusPx = Math.hypot(t.x - c.x, t.y - c.y);
+    } catch(_) { craneRadiusPx = 0; }
+    const mid = L.latLng((cranePadCenter.lat + targetLatLng.lat)/2, (cranePadCenter.lng + targetLatLng.lng)/2);
+    craneRealtimeLabels.push(addCraneLabel(mid.lat, mid.lng, `${Math.round(craneRadiusFeet)} ft`));
+}
+
+function drawCraneSector(currentLatLng, previewOnly = false) {
+    clearCraneRealtimeLabels();
+    // Current angle in whole degrees
+    const currentDeg = wholeDegreeBearing(cranePadCenter, currentLatLng);
+    if (craneLastAngleDeg === null) {
+        craneLastAngleDeg = currentDeg;
+    }
+    // Incremental change limited to shortest path per frame
+    const delta = normalizeAngle(currentDeg - craneLastAngleDeg);
+    craneSweepAccumDeg += delta;
+    // Clamp total sweep to [-360, 360]
+    if (craneSweepAccumDeg > 360) craneSweepAccumDeg = 360;
+    if (craneSweepAccumDeg < -360) craneSweepAccumDeg = -360;
+    craneLastAngleDeg = currentDeg;
+    // Build sector polygon in screen space for perfect radius match
+    const sectorLatLngs = buildSectorLatLngsFromPixels(cranePadCenter, craneRadiusPx, craneStartDeg, craneStartDeg + craneSweepAccumDeg, 1);
+    if (!craneSweepSector) {
+        craneSweepSector = L.polygon(sectorLatLngs, { 
+            color: '#dc2626',  // Red dashed outline for sweep sector
+            weight: 3,
+            fillColor: '#f59e0b',  // Orange fill
+            fillOpacity: 0.25,
+            dashArray: '10, 5'  // Red dashed outline
+        });
+        currentCraneGroup.addLayer(craneSweepSector);
+        try { craneSweepSector._path.style.fill = 'url(#craneCautionPattern)'; } catch(_) {}
+    } else {
+        craneSweepSector.setLatLngs([sectorLatLngs]);
+        try { craneSweepSector._path.style.fill = 'url(#craneCautionPattern)'; } catch(_) {}
+    }
+    craneRealtimeLabels.push(addCraneLabel(cranePadCenter.lat, cranePadCenter.lng, `${Math.round(Math.abs(craneSweepAccumDeg))}° sweep`));
+}
+
+function finalizeCrane() {
+    clearCraneRealtimeLabels();
+    // Push to undo as a single action
+    undoStack.push({ action: 'draw', shape: currentCraneGroup });
+    updateUndoButton();
+    // Popup summary on sector or group center
+    try {
+        const center = cranePadCenter || map.getCenter();
+        const summary = `Crane\nPad center: ${center.lat.toFixed(5)}, ${center.lng.toFixed(5)}\nRadius: ${Math.round(craneRadiusFeet)} ft`;
+        if (craneSweepSector) { craneSweepSector.bindPopup(summary); }
+    } catch(_) {}
+    // Reset tool state but keep crane on map
+    stopCraneDrawing();
+}
+
+function clearCraneRealtimeLabels() {
+    try {
+        craneRealtimeLabels.forEach(m => { try { map.removeLayer(m); } catch(_){} });
+    } catch(_) {}
+    craneRealtimeLabels = [];
+}
+
+function addCraneLabel(lat, lng, text) {
+    const marker = L.marker([lat, lng], {
+        icon: L.divIcon({
+            className: 'crane-measurement-label',
+            html: `<div style="background: rgba(255,255,255,0.98); border: 2px solid ${getStyleOrDefault('craneLabelBorder', '#111827')}; border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 700; color: ${getStyleOrDefault('craneLabelText', '#111827')}; white-space: pre; box-shadow: 0 3px 6px rgba(0,0,0,0.3); pointer-events: none;">${text}</div>`,
+            iconSize: [0,0], iconAnchor: [0,0]
+        })
+    }).addTo(map);
+    return marker;
+}
+
+// Build sector lat/lngs from center, radius (meters), start/end deg, step deg
+function buildSectorLatLngs(center, radiusMeters, startDeg, endDeg, stepDeg) {
+    const pts = [];
+    const start = normalizeAngle(startDeg);
+    const end = normalizeAngle(endDeg);
+    let sweep = normalizeAngle(end - start);
+    const step = Math.max(1, Math.min(10, Math.abs(stepDeg|0)));
+    // perimeter
+    for (let a = 0; a <= Math.abs(sweep); a += step) {
+        const ang = degToRad(start + Math.sign(sweep) * a);
+        pts.push(destinationPoint(center, radiusMeters, ang));
+    }
+    // close back to center
+    pts.push(center);
+    return pts;
+}
+
+// Sector builder using pixel radius to ensure exact visual match to the radius line
+function buildSectorLatLngsFromPixels(center, radiusPx, startDeg, endDeg, stepDeg) {
+    const pts = [];
+    const start = startDeg;
+    const end = endDeg;
+    const sweep = end - start; // can exceed 180
+    const step = Math.max(1, Math.min(10, Math.abs(stepDeg|0)));
+    const c = map.latLngToContainerPoint(center);
+    const dir = sweep >= 0 ? 1 : -1;
+    for (let a = 0; a <= Math.abs(sweep); a += step) {
+        const ang = degToRad(start + dir * a);
+        const px = L.point(c.x + radiusPx * Math.cos(ang), c.y + radiusPx * Math.sin(ang));
+        pts.push(map.containerPointToLatLng(px));
+    }
+    pts.push(center);
+    return pts;
+}
+
+// Shift-based snapping around a center point to N-degree increments
+function maybeSnapFromCenterDegrees(center, point, domEventOrNull, incrementDegrees = 1) {
+    try {
+        const shiftActive = (domEventOrNull && domEventOrNull.shiftKey) || isShiftDown;
+        if (!shiftActive) return point;
+        const p1 = map.latLngToContainerPoint(center);
+        const p2 = map.latLngToContainerPoint(point);
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist === 0) return point;
+        const angle = Math.atan2(dy, dx);
+        const inc = (Math.PI / 180) * incrementDegrees;
+        const snappedAngle = Math.round(angle / inc) * inc;
+        const snapped = L.point(p1.x + dist * Math.cos(snappedAngle), p1.y + dist * Math.sin(snappedAngle));
+        return map.containerPointToLatLng(snapped);
+    } catch(_) { return point; }
+}
+
+// Bearing helpers (whole-degree snapping)
+function bearingRad(from, to) {
+    const p1 = map.latLngToContainerPoint(from);
+    const p2 = map.latLngToContainerPoint(to);
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    return Math.atan2(dy, dx);
+}
+function degToRad(d) { return d * Math.PI / 180; }
+function radToDeg(r) { return r * 180 / Math.PI; }
+function normalizeAngle(deg) { let d = deg % 360; if (d > 180) d -= 360; if (d <= -180) d += 360; return d; }
+function wholeDegreeBearing(center, point) {
+    const rad = bearingRad(center, point);
+    return Math.round(radToDeg(rad));
+}
+function snapFromCenterWholeDegrees(center, point) {
+    const p1 = map.latLngToContainerPoint(center);
+    const p2 = map.latLngToContainerPoint(point);
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist === 0) return point;
+    const ang = Math.atan2(dy, dx);
+    const snappedDeg = Math.round(radToDeg(ang));
+    const snappedRad = degToRad(snappedDeg);
+    const snapped = L.point(p1.x + dist * Math.cos(snappedRad), p1.y + dist * Math.sin(snappedRad));
+    return map.containerPointToLatLng(snapped);
+}
+
+// Destination point in lat/lng from center, distance (m), bearing (rad)
+function destinationPoint(center, distanceMeters, bearingRadVal) {
+    // Approximate by projecting to container points for small spans (screen-orthonormal), consistent with other preview math
+    const p = map.latLngToContainerPoint(center);
+    // Convert meters to pixels using scale at center
+    const pEast = map.latLngToContainerPoint(L.latLng(center.lat, center.lng + 0.00001));
+    const metersPerPixel = (calculateDistanceInFeet(center, map.containerPointToLatLng(L.point(p.x + 1, p.y))) / 3.28084);
+    const px = distanceMeters / metersPerPixel;
+    const dx = px * Math.cos(bearingRadVal);
+    const dy = px * Math.sin(bearingRadVal);
+    return map.containerPointToLatLng(L.point(p.x + dx, p.y + dy));
+}
+
+function injectCautionPattern() {
+    try {
+        const overlayPane = document.querySelector('.leaflet-overlay-pane');
+        if (!overlayPane) return;
+        const svgEl = overlayPane.querySelector('svg');
+        if (!svgEl) return;
+        if (document.getElementById('crane-caution-defs')) return;
+        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        defs.setAttribute('id', 'crane-caution-defs');
+        const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
+        pattern.setAttribute('id', 'craneCautionPattern');
+        pattern.setAttribute('patternUnits', 'userSpaceOnUse');
+        pattern.setAttribute('width', '12');
+        pattern.setAttribute('height', '12');
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', '0'); rect.setAttribute('y', '0');
+        rect.setAttribute('width', '12'); rect.setAttribute('height', '12');
+        rect.setAttribute('fill', getStyleOrDefault('craneCautionBg', '#fef08a'));
+        const path1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path1.setAttribute('d', 'M-3 3 L3 -3');
+        path1.setAttribute('stroke', getStyleOrDefault('craneCautionStripe', '#111827'));
+        path1.setAttribute('stroke-width', '4');
+        const path2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path2.setAttribute('d', 'M0 12 L12 0');
+        path2.setAttribute('stroke', getStyleOrDefault('craneCautionStripe', '#111827'));
+        path2.setAttribute('stroke-width', '4');
+        const path3 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path3.setAttribute('d', 'M9 15 L15 9');
+        path3.setAttribute('stroke', getStyleOrDefault('craneCautionStripe', '#111827'));
+        path3.setAttribute('stroke-width', '4');
+        pattern.appendChild(rect);
+        pattern.appendChild(path1);
+        pattern.appendChild(path2);
+        pattern.appendChild(path3);
+        defs.appendChild(pattern);
+        svgEl.insertBefore(defs, svgEl.firstChild);
+    } catch(_) {}
 }
 
 // Preview request
@@ -3012,7 +3840,6 @@ function previewRequest() {
 
 // Collect form data
 function collectFormData() {
-    const area = currentShape ? L.GeometryUtil.geodesicArea(currentShape.getLatLngs()[0]) * 10.764 : 0;
     
     console.log('🔍 collectFormData - currentProject:', currentProject);
     console.log('🔍 collectFormData - currentProject.id:', currentProject?.id);
@@ -3022,7 +3849,7 @@ function collectFormData() {
         project: currentProject ? currentProject.id : null,
         projectPhases: getSelectedPhases(), // Add selected phases
         spaceCategory: document.getElementById('spaceCategory').value,
-        requestedArea: Math.round(area),
+        // requestedArea removed
         description: document.getElementById('description').value,
         geometry: currentShape ? (() => {
             console.log('Collecting form data - currentShape:', currentShape);
@@ -3056,8 +3883,8 @@ async function saveSpace() {
         return;
     }
     
-    if (!currentShape) {
-        alert('Please draw a shape on the map first.');
+    if (!currentShape && !(currentCraneGroup && craneStage === 'idle' && !isCraneModeActive)) {
+        alert('Please draw a shape or finish the crane tool first.');
         return;
     }
     
@@ -3088,7 +3915,7 @@ async function saveSpace() {
             category: formData.spaceCategory,
             trade: formData.companyName,
             description: formData.description || '',
-            geometry: formData.geometry,
+            geometry: currentShape ? formData.geometry : buildCraneGeometry(),
             status: 'active'
         };
         
@@ -3149,9 +3976,27 @@ async function saveSpace() {
 // Clear current shape and reset form
 function clearCurrentShape() {
     if (currentShape) {
+        // Remove any attached distance labels to the shape
+        try {
+            if (currentShape.distanceLabels) {
+                currentShape.distanceLabels.forEach(label => { try { map.removeLayer(label); } catch(_){} });
+                currentShape.distanceLabels = [];
+            }
+        } catch(_) {}
         drawnItems.removeLayer(currentShape);
         currentShape = null;
     }
+    // Clear rectangle measurements
+    try {
+        if (window.rectangleMeasurements) {
+            window.rectangleMeasurements.forEach(m => { try { map.removeLayer(m); } catch(_){} });
+            window.rectangleMeasurements = [];
+        }
+        if (window.realtimeRectangleMeasurements) {
+            window.realtimeRectangleMeasurements.forEach(m => { try { map.removeLayer(m); } catch(_){} });
+            window.realtimeRectangleMeasurements = [];
+        }
+    } catch(_) {}
     
     // Clear form fields
     document.getElementById('description').value = '';
@@ -3187,7 +4032,10 @@ async function loadProjectSpaces() {
         console.log('⚠️ Cannot load spaces - no project selected or no database connection');
         return;
     }
-    
+    // If crane was the active drawable, ensure its state is inactive for validation
+    if (currentCraneGroup && isCraneModeActive === false) {
+        // keep rendered crane; nothing to clear here
+    }
     try {
         console.log('📋 Loading spaces for project:', selectedProject);
         
@@ -3240,6 +4088,12 @@ async function loadProjectSpaces() {
             map.removeLayer(savedSpacesLayer);
         }
         
+        // Clear existing watermarks when filtering
+        if (window.watermarkMarkers) {
+            window.watermarkMarkers.forEach(marker => marker.remove());
+            window.watermarkMarkers = [];
+        }
+        
         // Create new layer for saved spaces
         savedSpacesLayer = new L.FeatureGroup();
         map.addLayer(savedSpacesLayer);
@@ -3265,37 +4119,125 @@ function displaySavedSpace(space) {
             return;
         }
         
-        // Determine color based on phase coverage
+        // Get category info first (needed for phase coverage logic)
+        const categoryInfo = SPACE_CATEGORIES.find(cat => cat.name === space.category);
+        
+        // Check if this is a crane shape (has multiple features with 'part' properties)
+        const isCraneShape = space.geometry && space.geometry.type === 'FeatureCollection' && 
+                            space.geometry.features && space.geometry.features.some(f => f.properties && f.properties.part);
+        
+        let shapeColor, fillColor;
+        
+        if (isCraneShape) {
+            // Crane shapes use their own color scheme
+            shapeColor = '#1f2937';  // Dark grey for crane pad
+            fillColor = '#1f2937';
+        } else {
+            // Regular shapes use category colors
+            shapeColor = categoryInfo?.color || '#3b82f6';  // Use category color or default blue
+            fillColor = shapeColor;
+        }
+        
+        // Always show category colors by default
+        let fillOpacity = 0.3;
+        let weight = 2;
+        
+        // Only apply phase-based styling if phases are actually selected
         const selectedPhases = getSelectedPhases();
-        const spacePhaseIds = space.phase_space_assignments?.map(assignment => 
-            assignment.project_phases?.id
-        ) || [];
-        
-        let shapeColor = '#059669';  // Default green
-        let fillColor = '#10b981';
-        
-        // If multiple phases are selected, check if space covers ALL of them
-        if (selectedPhases.length > 1) {
-            const coversAllPhases = selectedPhases.every(selectedPhaseId => 
-                spacePhaseIds.includes(parseInt(selectedPhaseId))
-            );
+        if (selectedPhases.length > 0) {
+            const spacePhaseIds = space.phase_space_assignments?.map(assignment => 
+                assignment.project_phases?.id
+            ) || [];
             
-            if (!coversAllPhases) {
-                shapeColor = '#dc2626';  // Red for incomplete coverage
-                fillColor = '#ef4444';
+            // If multiple phases are selected, check if space covers ALL of them
+            if (selectedPhases.length > 1) {
+                const coversAllPhases = selectedPhases.every(selectedPhaseId => 
+                    spacePhaseIds.includes(parseInt(selectedPhaseId))
+                );
+                
+                if (!coversAllPhases) {
+                    // Use red border for incomplete coverage, but keep category color for fill
+                    shapeColor = '#dc2626';  // Red border for incomplete coverage
+                    fillColor = categoryInfo?.color || '#3b82f6';  // Keep category color for fill
+                    fillOpacity = 0.2;  // More transparent for incomplete
+                    weight = 3;  // Thicker border for incomplete
+                }
             }
         }
         
         // Create Leaflet layer from GeoJSON geometry
-        const layer = L.geoJSON(space.geometry, {
-            style: {
-                color: shapeColor,
-                fillColor: fillColor,
-                fillOpacity: 0.3,
-                weight: 2,
-                opacity: 0.8
+        let layer;
+        
+        if (isCraneShape) {
+            // Handle crane shapes with different styling for each part
+            layer = L.geoJSON(space.geometry, {
+                style: function(feature) {
+                    const part = feature.properties?.part;
+                    if (part === 'pad') {
+                        return {
+                            color: '#1f2937',  // Dark grey for crane pad
+                            fillColor: '#1f2937',
+                            fillOpacity: 0.6,
+                            weight: 2,
+                            opacity: 0.8
+                        };
+                    } else if (part === 'sweep') {
+                        return {
+                            color: '#dc2626',  // Red outline for sweep sector
+                            fillColor: '#f59e0b',  // Orange fill
+                            fillOpacity: 0.25,
+                            weight: 3,
+                            opacity: 0.8,
+                            dashArray: '10, 5'  // Red dashed outline
+                        };
+                    } else if (part === 'radius') {
+                        // Hide radius line in saved crane shapes - it's only for drawing
+                        return {
+                            color: 'transparent',
+                            weight: 0,
+                            opacity: 0
+                        };
+                    }
+                    // Default fallback
+                    return {
+                        color: '#1f2937',
+                        fillColor: '#1f2937',
+                        fillOpacity: 0.3,
+                        weight: 2,
+                        opacity: 0.8
+                    };
+                }
+            });
+        } else {
+            // Regular shapes use standard styling
+            layer = L.geoJSON(space.geometry, {
+                style: {
+                    color: shapeColor,
+                    fillColor: fillColor,
+                    fillOpacity: fillOpacity,
+                    weight: weight,
+                    opacity: 0.8
+                }
+            });
+        }
+        
+        // Apply watermark for company name - BULLETPROOF APPROACH
+        if (space.trade) {
+            console.log('🏷️ Applying watermark to saved space for company:', space.trade);
+            createShapeWatermark(layer, space.trade);
+        }
+
+        // Mark saved space layers for pointer disabling during drawing
+        try {
+            const each = (l) => {
+                if (l && l._path) {
+                    l._path.classList.add('saved-space-layer');
+                }
+            };
+            if (layer && layer.eachLayer) {
+                layer.eachLayer(each);
             }
-        });
+        } catch(_) {}
         
         // Add space information to popup
         const phaseNames = space.phase_space_assignments?.map(assignment => 
@@ -3308,6 +4250,10 @@ function displaySavedSpace(space) {
         // Add phase coverage information
         let phaseCoverageInfo = '';
         if (selectedPhases.length > 1) {
+            const spacePhaseIds = space.phase_space_assignments?.map(assignment => 
+                assignment.project_phases?.id
+            ) || [];
+            
             const coversAllPhases = selectedPhases.every(selectedPhaseId => 
                 spacePhaseIds.includes(parseInt(selectedPhaseId))
             );
@@ -3388,8 +4334,8 @@ function updateSpaceCount(count) {
         countDisplay.className = 'space-count';
         countDisplay.style.cssText = `
             position: absolute;
-            top: 10px;
-            right: 10px;
+            bottom: 10px;
+            left: 10px;
             background: rgba(255, 255, 255, 0.9);
             padding: 8px 12px;
             border-radius: 6px;

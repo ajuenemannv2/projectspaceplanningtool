@@ -24,8 +24,8 @@ class AdminPanelDatabase {
         }
         
         this.supabase = supabase.createClient(
-            'https://yfewnhiugwmtdenxvrme.supabase.co',
-            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlmZXduaGl1Z3dtdGRlbnh2cm1lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3MDI2MzEsImV4cCI6MjA3MzI3ODYzMX0.aawp6SPxxPNSGmOVQ4zfPM258mo48SZmtelTko7JkGg'
+            window.SUPABASE_CONFIG.url,
+            window.SUPABASE_CONFIG.anonKey
         );
         
         console.log('✅ Supabase client created');
@@ -40,6 +40,25 @@ class AdminPanelDatabase {
         this.showLoadingAnimation();
         
         try {
+            // Global error banner helpers
+            const errorBanner = document.getElementById('globalErrorBanner');
+            const errorText = document.getElementById('globalErrorText');
+            const errorRetry = document.getElementById('globalErrorRetry');
+            const errorDismiss = document.getElementById('globalErrorDismiss');
+            const showError = (message, retryFn) => {
+                if (errorText) errorText.textContent = message || 'An error occurred.';
+                if (errorBanner) errorBanner.style.display = 'block';
+                if (errorRetry) errorRetry.onclick = () => { if (retryFn) retryFn(); if (errorBanner) errorBanner.style.display = 'none'; };
+                if (errorDismiss) errorDismiss.onclick = () => { if (errorBanner) errorBanner.style.display = 'none'; };
+            };
+            const requireConfig = () => {
+                if (!window.SUPABASE_CONFIG || !window.SUPABASE_CONFIG.url || !window.SUPABASE_CONFIG.anonKey) {
+                    showError('Configuration error: Supabase settings not found. Ensure config/public-supabase-config.js is included with a valid URL and anon key.', () => window.location.reload());
+                    throw new Error('Missing Supabase config');
+                }
+            };
+            requireConfig();
+            
             await this.loadData();
             console.log('✅ Data loaded');
             
@@ -2209,7 +2228,18 @@ class AdminPanelDatabase {
             
             const row = document.createElement('tr');
             row.innerHTML = `
-                <td>${category.name}</td>
+                <td>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="
+                            width: 20px; 
+                            height: 20px; 
+                            background-color: ${category.color || '#3b82f6'}; 
+                            border: 1px solid #e5e7eb; 
+                            border-radius: 4px;
+                        "></div>
+                        ${category.name}
+                    </div>
+                </td>
                 <td>${category.description || 'No description'}</td>
                 <td><span class="usage-count ${usageCount === 0 ? 'zero' : usageCount > 5 ? 'high' : ''}">${usageCount}</span></td>
                 <td>
@@ -2449,6 +2479,7 @@ class AdminPanelDatabase {
 
     getCategoryFormHTML(category = null) {
         const isEdit = category !== null;
+        const defaultColor = category?.color || '#3b82f6'; // Default blue color
         return `
             <form id="categoryForm">
                 <div class="form-group">
@@ -2458,6 +2489,26 @@ class AdminPanelDatabase {
                 <div class="form-group">
                     <label for="categoryDescription">Description</label>
                     <textarea id="categoryDescription" name="description" rows="3">${category?.description || ''}</textarea>
+                </div>
+                <div class="form-group">
+                    <label for="categoryColor">Display Color *</label>
+                    <div class="color-picker-container">
+                        <input type="color" id="categoryColor" name="color" value="${defaultColor}" 
+                               style="width: 60px; height: 40px; border: none; border-radius: 4px; cursor: pointer;">
+                        <input type="text" id="categoryColorText" value="${defaultColor}" 
+                               placeholder="#3b82f6" style="margin-left: 10px; width: 100px; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+                        <div class="color-preview" style="
+                            display: inline-block; 
+                            width: 30px; 
+                            height: 30px; 
+                            background-color: ${defaultColor}; 
+                            border: 2px solid #e5e7eb; 
+                            border-radius: 4px; 
+                            margin-left: 10px; 
+                            vertical-align: middle;
+                        "></div>
+                    </div>
+                    <small class="form-help">Choose a color to represent this category on the map</small>
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
@@ -2501,31 +2552,168 @@ class AdminPanelDatabase {
 
         console.log('🔧 Creating edit category modal for:', category);
         
-        // Create modal HTML directly with inline styles
-        const modalHTML = `
-            <div class="modal-overlay" style="position: fixed !important; top: 0px !important; left: 0px !important; width: 100% !important; height: 100% !important; background: rgba(0, 0, 0, 0.5) !important; display: flex !important; justify-content: center !important; align-items: center !important; z-index: 999999 !important;">
-                <div class="modal" style="background: white !important; border-radius: 12px !important; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2) !important; max-width: 500px !important; width: 90% !important; max-height: 90vh !important; overflow-y: auto !important;">
-                    <div class="modal-header" style="display: flex !important; justify-content: space-between !important; align-items: center !important; padding: 1.5rem !important; border-bottom: 1px solid #e2e8f0 !important;">
-                        <h3 style="margin: 0 !important; font-size: 1.25rem !important; font-weight: 600 !important; color: #1f2937 !important;">Edit Space Category</h3>
-                        <button type="button" onclick="this.closest('.modal-overlay').remove()" style="background: none !important; border: none !important; font-size: 1.5rem !important; cursor: pointer !important; color: #6b7280 !important; padding: 0 !important; width: 30px !important; height: 30px !important; display: flex !important; align-items: center !important; justify-content: center !important;">&times;</button>
-                    </div>
-                    <div class="modal-body" style="padding: 1.5rem !important;">
-                        ${this.getCategoryFormHTML(category)}
-                    </div>
+        const container = document.getElementById('modalContainer');
+        console.log('🔧 Modal container found:', container);
+        
+        // Clear any existing modals first
+        container.innerHTML = '';
+        console.log('🔧 Modal container cleared');
+        
+        // Create modal directly like the working project modals
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.style.cssText = `
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            background: rgba(0, 0, 0, 0.5) !important;
+            z-index: 999999 !important;
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
+        `;
+        
+        modal.innerHTML = `
+            <div style="
+                background: white !important;
+                border-radius: 12px !important;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2) !important;
+                max-width: 500px !important;
+                width: 90% !important;
+                max-height: 90vh !important;
+                overflow-y: auto !important;
+            ">
+                <div style="
+                    display: flex !important;
+                    justify-content: space-between !important;
+                    align-items: center !important;
+                    padding: 1.5rem !important;
+                    border-bottom: 1px solid #e2e8f0 !important;
+                ">
+                    <h3 style="margin: 0 !important; color: #1e293b !important; font-size: 1.25rem !important;">Edit Space Category</h3>
+                    <button onclick="this.closest('.modal-overlay').remove()" style="
+                        background: none !important;
+                        border: none !important;
+                        font-size: 1.5rem !important;
+                        color: #64748b !important;
+                        cursor: pointer !important;
+                        padding: 0 !important;
+                        width: 30px !important;
+                        height: 30px !important;
+                        display: flex !important;
+                        align-items: center !important;
+                        justify-content: center !important;
+                        border-radius: 50% !important;
+                    ">&times;</button>
+                </div>
+                <div style="padding: 1.5rem !important;">
+                    ${this.getCategoryFormHTML(category)}
                 </div>
             </div>
         `;
         
-        // Clear modal container and add new modal
-        const modalContainer = document.getElementById('modalContainer');
-        modalContainer.innerHTML = modalHTML;
+        container.appendChild(modal);
+        console.log('🔧 Modal appended to container');
         
-        // Set up form submission
-        const form = modalContainer.querySelector('#categoryForm');
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            await this.updateCategory(categoryId, modalContainer.querySelector('.modal-overlay'));
-        });
+        // Set up form handlers after modal creation
+        this.setupCategoryFormHandlers(categoryId);
+        console.log('🔧 Form handlers setup complete');
+    }
+
+    setupCategoryFormHandlers(categoryId = null) {
+        const form = document.getElementById('categoryForm');
+        if (form) {
+            // Remove any existing event listeners to prevent duplicates
+            form.removeEventListener('submit', this.handleCategorySubmit);
+            
+            // Set up color picker synchronization
+            this.setupColorPickerSync();
+            
+            // Create a bound handler
+            this.handleCategorySubmit = async (e) => {
+                e.preventDefault();
+                
+                // Prevent multiple submissions
+                const submitBtn = form.querySelector('button[type="submit"]');
+                if (submitBtn.disabled) return;
+                
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Updating...';
+                
+                try {
+                    const formData = new FormData(form);
+                    const categoryData = Object.fromEntries(formData.entries());
+                    
+                    console.log('🔧 Submitting category data:', categoryData);
+                    
+                    if (categoryId) {
+                        await this.updateCategory(categoryId, form.closest('.modal-overlay'));
+                        this.showSuccess('Category updated successfully!');
+                    } else {
+                        await this.addCategory(categoryData);
+                        this.showSuccess('Category created successfully!');
+                    }
+                    
+                    // Close modal
+                    const modal = form.closest('.modal-overlay');
+                    if (modal) {
+                        modal.remove();
+                    }
+                    
+                    // Refresh the categories table
+                    await this.updateCategoriesTable();
+                } catch (error) {
+                    console.error('❌ Category submission error:', error);
+                    this.showError(`Failed to ${categoryId ? 'update' : 'create'} category: ` + error.message);
+                } finally {
+                    // Re-enable button
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = categoryId ? 'Update Category' : 'Add Category';
+                }
+            };
+            
+            form.addEventListener('submit', this.handleCategorySubmit);
+        }
+    }
+
+    setupColorPickerSync() {
+        const colorPicker = document.getElementById('categoryColor');
+        const colorText = document.getElementById('categoryColorText');
+        const colorPreview = document.querySelector('.color-preview');
+        
+        if (colorPicker && colorText && colorPreview) {
+            // Sync color picker to text input and preview
+            colorPicker.addEventListener('input', (e) => {
+                const color = e.target.value;
+                colorText.value = color;
+                colorPreview.style.backgroundColor = color;
+            });
+            
+            // Sync text input to color picker and preview
+            colorText.addEventListener('input', (e) => {
+                const color = e.target.value;
+                if (this.isValidHexColor(color)) {
+                    colorPicker.value = color;
+                    colorPreview.style.backgroundColor = color;
+                }
+            });
+            
+            // Validate hex color format
+            colorText.addEventListener('blur', (e) => {
+                const color = e.target.value;
+                if (color && !this.isValidHexColor(color)) {
+                    e.target.value = '#3b82f6'; // Reset to default
+                    colorPicker.value = '#3b82f6';
+                    colorPreview.style.backgroundColor = '#3b82f6';
+                }
+            });
+        }
+    }
+
+    isValidHexColor(hex) {
+        return /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(hex);
     }
 
     async editCompany(companyId) {
@@ -2566,7 +2754,8 @@ class AdminPanelDatabase {
             const formData = new FormData(modal.querySelector('#categoryForm'));
             const categoryData = {
                 name: formData.get('name'),
-                description: formData.get('description') || null
+                description: formData.get('description') || null,
+                color: formData.get('color') || '#3b82f6'
             };
 
             const { data, error } = await this.supabase
@@ -2618,7 +2807,8 @@ class AdminPanelDatabase {
             const formData = new FormData(modal.querySelector('#categoryForm'));
             const categoryData = {
                 name: formData.get('name'),
-                description: formData.get('description') || null
+                description: formData.get('description') || null,
+                color: formData.get('color') || '#3b82f6'
             };
 
             const { data, error } = await this.supabase
@@ -2850,4 +3040,3 @@ class AdminPanelDatabase {
 document.addEventListener('DOMContentLoaded', () => {
     window.adminPanel = new AdminPanelDatabase();
 });
-45.55892367527075, -122.93169330055501

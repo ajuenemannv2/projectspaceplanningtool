@@ -17,7 +17,7 @@
                 <p>Project Space Planning & Presentation View</p>
             </div>
             <div class="header-right">
-                <button class="btn btn-secondary" onclick="window.location.href='index.html'">
+                <button class="btn btn-secondary" onclick="window.logisticsMap && window.logisticsMap.goToMainTool()">
                     <i class="fas fa-arrow-left"></i> Back to Tool
                 </button>
                 <button class="btn btn-secondary" onclick="window.location.href='admin.html'">
@@ -67,8 +67,20 @@
         </div>
     </div>
 
+    <!-- Global Error Banner -->
+    <div id="globalErrorBanner" class="global-error-banner">
+        <div class="banner-content">
+            <span id="globalErrorText">An unexpected error occurred.</span>
+            <div class="banner-actions">
+                <button id="globalErrorRetry" class="btn btn-secondary">Retry</button>
+                <button id="globalErrorDismiss" class="btn btn-secondary">Dismiss</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="config/public-supabase-config.js"></script>
     <script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="logistics-script.js"></script>
