@@ -18,8 +18,22 @@
         return [];
     }
 
+    function restoreForProject(projectId){
+        try {
+            if (window.ToolSelection && typeof window.ToolSelection.restorePhases === 'function') {
+                const ids = window.ToolSelection.restorePhases(projectId);
+                if (Array.isArray(ids) && ids.length) {
+                    ids.forEach(id => {
+                        const cb = document.getElementById('phase_' + id);
+                        if (cb) cb.checked = true;
+                    });
+                }
+            }
+        } catch(_) {}
+    }
+
     if (typeof window !== 'undefined') {
-        window.ToolPhases = { populate, getSelected };
+        window.ToolPhases = { populate, getSelected, restoreForProject };
     }
 })();
 

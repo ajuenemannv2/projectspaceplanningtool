@@ -271,6 +271,12 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
             // Load phases for the selected (or default) project
             populatePhaseCheckboxes(targetKey);
+            try {
+                if (window.ToolPhases && typeof window.ToolPhases.restoreForProject === 'function') {
+                    window.ToolPhases.restoreForProject(targetKey);
+                    if (window.ToolSpaces && typeof window.ToolSpaces.refresh === 'function') window.ToolSpaces.refresh();
+                }
+            } catch(_) {}
         }
     }
     
@@ -2765,6 +2771,12 @@ function initializeEventListeners() {
                     if (z) localStorage.setItem('selected_project_zoom', String(z));
                 }
             } catch(_) {}
+            // After project switch, refresh phases and spaces if wrappers are available
+            try {
+                if (window.ToolPhases && typeof window.ToolPhases.populate === 'function') window.ToolPhases.populate(e.target.value);
+                if (window.ToolPhases && typeof window.ToolPhases.restoreForProject === 'function') window.ToolPhases.restoreForProject(e.target.value);
+                if (window.ToolSpaces && typeof window.ToolSpaces.refresh === 'function') window.ToolSpaces.refresh();
+            } catch(_) {}
         });
     }
     // Legacy request actions removed
@@ -4132,6 +4144,26 @@ function displaySavedSpace(space) {
         const isCraneShape = space.geometry && space.geometry.type === 'FeatureCollection' && 
                             space.geometry.features && space.geometry.features.some(f => f.properties && f.properties.part);
         
+        // Special handling for fences (LineString) to match Logistics styling
+        if (space.geometry.type === 'LineString') {
+            try {
+                const coordinates = space.geometry.coordinates;
+                const latLngs = coordinates.map(c => L.latLng(c[1], c[0]));
+                const fenceLayer = L.polyline(latLngs, {
+                    color: '#ffd700', // yellow
+                    weight: 3,
+                    opacity: 0.9
+                });
+                // mark as saved-space
+                try { if (fenceLayer && fenceLayer._path) fenceLayer._path.classList.add('saved-space-layer'); } catch(_) {}
+                savedSpacesLayer.addLayer(fenceLayer);
+                return;
+            } catch (e) {
+                console.warn('⚠️ Failed to render LineString fence:', e);
+                return;
+            }
+        }
+
         let shapeColor, fillColor;
         
         if (isCraneShape) {
@@ -4227,8 +4259,8 @@ function displaySavedSpace(space) {
             });
         }
         
-        // Apply watermark for company name - BULLETPROOF APPROACH
-        if (space.trade) {
+        // Apply watermark for company name - BULLETPROOF APPROACH (skip for fences/lines)
+        if (space.trade && space.geometry.type !== 'LineString') {
             console.log('🏷️ Applying watermark to saved space for company:', space.trade);
             createShapeWatermark(layer, space.trade);
         }
@@ -4242,6 +4274,8 @@ function displaySavedSpace(space) {
             };
             if (layer && layer.eachLayer) {
                 layer.eachLayer(each);
+            } else if (layer && layer._path) {
+                layer._path.classList.add('saved-space-layer');
             }
         } catch(_) {}
         
