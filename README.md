@@ -5,24 +5,20 @@ I beleive to open this applicaiton you would need my datsbase URL
 
 # Run Locally (Quick Start)
 
-1) Configure Supabase
-- Edit `config/public-supabase-config.js` and ensure your Supabase `url` and `anonKey` are set.
-- In Supabase → Settings → API, add your dev origins to Allowed Origins (e.g., `http://localhost:3000`, `http://127.0.0.1:3000`).
-
-2) Start a simple dev server (pick one)
+1) Start a simple dev server (pick one)
 - Node (no install):
   - `npx http-server -p 3000 -c-1`
 - Python 3:
   - `python -m http.server 3000`
 
-3) Open in browser
+2) Open in browser
 - Main Tool: `http://localhost:3000/index.html`
 - Logistics Map: `http://localhost:3000/logistics-map.html`
 - Admin Panel: `http://localhost:3000/admin.html`
 
 Notes
 - Do not open via `file://`; use a local HTTP server.
-- If calls fail: verify Supabase URL/anon key, CORS Allowed Origins, and RLS permissions for the anon role.
+- This ZIP includes Supabase credentials. If calls fail: verify Supabase Allowed Origins (CORS) include your server origin (e.g., `http://localhost:3000`) and that RLS permissions for the anon role allow required reads/writes.
 
 # Project Space Planning Tool
 
