@@ -251,6 +251,12 @@ document.addEventListener('DOMContentLoaded', async function() {
             projectSelect.value = targetKey;
             try { navigateToProject(targetKey); } catch(_) {}
             try {
+                if (window.ToolSelection && typeof window.ToolSelection.persistProject === 'function') {
+                    const z = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : (currentProject?.zoom || CONFIG?.defaultZoom || 16);
+                    window.ToolSelection.persistProject(targetKey, z);
+                }
+            } catch(_) {}
+            try {
                 const proj = PROJECTS[targetKey];
                 if (window.ToolUI && typeof window.ToolUI.setCurrentProjectName === 'function') {
                     window.ToolUI.setCurrentProjectName(proj && proj.name);
@@ -2754,9 +2760,14 @@ function initializeEventListeners() {
             updateCurrentProjectBanner(e.target.value);
             // Persist selection immediately for cross-page continuity
             try {
-                localStorage.setItem('selected_project_id', String(e.target.value));
-                const z = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : (currentProject?.zoom || CONFIG?.defaultZoom || 16);
-                if (z) localStorage.setItem('selected_project_zoom', String(z));
+                if (window.ToolSelection && typeof window.ToolSelection.persistProject === 'function') {
+                    const z = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : (currentProject?.zoom || CONFIG?.defaultZoom || 16);
+                    window.ToolSelection.persistProject(e.target.value, z);
+                } else {
+                    localStorage.setItem('selected_project_id', String(e.target.value));
+                    const z = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : (currentProject?.zoom || CONFIG?.defaultZoom || 16);
+                    if (z) localStorage.setItem('selected_project_zoom', String(z));
+                }
             } catch(_) {}
         });
     }
