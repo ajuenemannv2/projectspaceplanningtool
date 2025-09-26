@@ -1260,94 +1260,75 @@ class LogisticsMap {
                 console.log('🔧 Drawing', this.currentSpaces.length, 'shapes manually...');
                 console.log('🔧 Current spaces:', this.currentSpaces.map(s => ({ id: s.id, name: s.space_name || 'Unnamed' })));
                 
-                const drawPolygon = (coords, fillColor, strokeColor, lineDash = null, fillOpacity = 0.3, strokeWidth = 4) => {
-                    const pixel = coords.map(coord => this.map.latLngToContainerPoint(L.latLng(coord[1], coord[0])));
-                    const scaled = pixel.map(p => ({ x: p.x * 2, y: p.y * 2 }));
-                    if (scaled.length < 2) return;
-                    finalCtx.beginPath();
-                    finalCtx.moveTo(scaled[0].x, scaled[0].y);
-                    for (let i = 1; i < scaled.length; i++) finalCtx.lineTo(scaled[i].x, scaled[i].y);
-                    finalCtx.closePath();
-                    const alpha = Math.max(0, Math.min(1, fillOpacity));
-                    // append alpha to hex if provided in hex, fallback to rgba
-                    try {
-                        if (fillColor.startsWith('#') && (fillColor.length === 7 || fillColor.length === 4)) {
-                            finalCtx.fillStyle = fillColor + Math.floor(alpha * 255).toString(16).padStart(2, '0');
-                        } else {
-                            finalCtx.fillStyle = fillColor;
-                            finalCtx.globalAlpha = alpha;
-                        }
-                        finalCtx.fill();
-                        finalCtx.globalAlpha = 1;
-                    } catch(_) { finalCtx.fillStyle = fillColor; finalCtx.fill(); }
-                    if (lineDash && finalCtx.setLineDash) finalCtx.setLineDash(lineDash);
-                    finalCtx.strokeStyle = strokeColor;
-                    finalCtx.lineWidth = strokeWidth;
-                    finalCtx.stroke();
-                    if (finalCtx.setLineDash) finalCtx.setLineDash([]);
-                };
-
                 this.currentSpaces.forEach((space, index) => {
                     if (!space.geometry) return;
 
-                    // Determine category color for regular shapes
-                    const categoryInfo = this.spaceCategories?.find(cat => cat.name === space.category);
-                    const defaultFill = categoryInfo?.color || '#3b82f6';
-                    const spacePhaseIds = space.phase_space_assignments?.map(a => a.project_phases?.id).filter(id => id !== undefined) || [];
-                    const missingWhenMulti = this.currentPhases.length > 1 && this.currentPhases.some(sel => !spacePhaseIds.includes(sel));
-                    const strokeColor = missingWhenMulti ? '#dc2626' : defaultFill;
-                    const fillOpacity = missingWhenMulti ? 0.2 : 0.3;
-
                     if (space.geometry.type === 'Polygon') {
-                        drawPolygon(space.geometry.coordinates[0], defaultFill, strokeColor, null, fillOpacity);
+                        const coordinates = space.geometry.coordinates[0];
+
+                        const pixelCoords = coordinates.map(coord => {
+                            const latLng = L.latLng(coord[1], coord[0]);
+                            return this.map.latLngToContainerPoint(latLng);
+                        });
+
+                        const scaledCoords = pixelCoords.map(point => ({
+                            x: point.x * 2,
+                            y: point.y * 2
+                        }));
+
+                        const spacePhaseIds = space.phase_space_assignments?.map(assignment => 
+                            assignment.project_phases?.id
+                        ).filter(id => id !== undefined) || [];
+
+                        let color = '#10b981';
+                        if (this.currentPhases.length > 1) {
+                            const missingPhaseIds = this.currentPhases.filter(selectedId => 
+                                !spacePhaseIds.includes(selectedId)
+                            );
+                            if (missingPhaseIds.length > 0) {
+                                color = '#ef4444';
+                            }
+                        }
+
+                        finalCtx.beginPath();
+                        finalCtx.moveTo(scaledCoords[0].x, scaledCoords[0].y);
+                        for (let i = 1; i < scaledCoords.length; i++) {
+                            finalCtx.lineTo(scaledCoords[i].x, scaledCoords[i].y);
+                        }
+                        finalCtx.closePath();
+
+                        finalCtx.fillStyle = color + '4D';
+                        finalCtx.fill();
+                        finalCtx.strokeStyle = color;
+                        finalCtx.lineWidth = 4;
+                        finalCtx.stroke();
+
                         console.log(`🔧 Drew polygon ${index} at exact coordinates`);
                     } else if (space.geometry.type === 'LineString') {
-                        // Fences
-                        const coords = space.geometry.coordinates;
-                        const pixel = coords.map(coord => this.map.latLngToContainerPoint(L.latLng(coord[1], coord[0])));
-                        const scaled = pixel.map(p => ({ x: p.x * 2, y: p.y * 2 }));
-                        if (scaled.length > 1) {
+                        // Draw fences as yellow polylines
+                        const coordinates = space.geometry.coordinates;
+
+                        const pixelCoords = coordinates.map(coord => {
+                            const latLng = L.latLng(coord[1], coord[0]);
+                            return this.map.latLngToContainerPoint(latLng);
+                        });
+
+                        const scaledCoords = pixelCoords.map(point => ({
+                            x: point.x * 2,
+                            y: point.y * 2
+                        }));
+
+                        if (scaledCoords.length > 1) {
                             finalCtx.beginPath();
-                            finalCtx.moveTo(scaled[0].x, scaled[0].y);
-                            for (let i = 1; i < scaled.length; i++) finalCtx.lineTo(scaled[i].x, scaled[i].y);
-                            finalCtx.strokeStyle = '#ffd700';
-                            finalCtx.lineWidth = 4;
+                            finalCtx.moveTo(scaledCoords[0].x, scaledCoords[0].y);
+                            for (let i = 1; i < scaledCoords.length; i++) {
+                                finalCtx.lineTo(scaledCoords[i].x, scaledCoords[i].y);
+                            }
+                            finalCtx.strokeStyle = '#ffd700'; // Yellow to match on-map style
+                            finalCtx.lineWidth = 4; // 2px * scale factor
                             finalCtx.stroke();
+
                             console.log(`🔧 Drew fence ${index} at exact coordinates`);
-                        }
-                    } else if (space.geometry.type === 'FeatureCollection') {
-                        // Crane shapes composed of multiple parts
-                        try {
-                            space.geometry.features.forEach(feat => {
-                                if (!feat || !feat.geometry) return;
-                                const part = feat.properties?.part;
-                                if (feat.geometry.type === 'Polygon') {
-                                    if (part === 'pad') {
-                                        drawPolygon(feat.geometry.coordinates[0], '#1f2937', '#1f2937', null, 0.6, 2);
-                                    } else if (part === 'sweep') {
-                                        drawPolygon(feat.geometry.coordinates[0], '#f59e0b', '#dc2626', [10, 5], 0.25, 3);
-                                    } else {
-                                        // default polygon style
-                                        drawPolygon(feat.geometry.coordinates[0], defaultFill, strokeColor, null, fillOpacity);
-                                    }
-                                } else if (feat.geometry.type === 'LineString') {
-                                    // Radius line (optional: make subtle)
-                                    const coords = feat.geometry.coordinates;
-                                    const pixel = coords.map(coord => this.map.latLngToContainerPoint(L.latLng(coord[1], coord[0])));
-                                    const scaled = pixel.map(p => ({ x: p.x * 2, y: p.y * 2 }));
-                                    if (scaled.length > 1) {
-                                        finalCtx.beginPath();
-                                        finalCtx.moveTo(scaled[0].x, scaled[0].y);
-                                        for (let i = 1; i < scaled.length; i++) finalCtx.lineTo(scaled[i].x, scaled[i].y);
-                                        finalCtx.strokeStyle = part === 'radius' ? 'rgba(0,0,0,0.2)' : strokeColor;
-                                        finalCtx.lineWidth = 2;
-                                        finalCtx.stroke();
-                                    }
-                                }
-                            });
-                            console.log(`🔧 Drew crane shape ${index}`);
-                        } catch (e) {
-                            console.warn('⚠️ Error drawing crane shape', e);
                         }
                     }
                 });
