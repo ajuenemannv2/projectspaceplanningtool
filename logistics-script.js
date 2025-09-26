@@ -1226,6 +1226,12 @@ class LogisticsMap {
                 originalShapes.push({ element: svg, originalDisplay: svg.style.display });
                 svg.style.display = 'none';
             });
+            // Hide watermark markers so we can draw them on TOP later
+            const wmElements = mapContainer.querySelectorAll('.watermark-marker');
+            wmElements.forEach(el => {
+                originalShapes.push({ element: el, originalDisplay: el.style.display });
+                el.style.display = 'none';
+            });
 
             // Step 2: Capture the map without shapes
             const mapCanvas = await html2canvas(mapContainer, {
@@ -1283,7 +1289,7 @@ class LogisticsMap {
 					finalCtx.restore();
 				};
 
-				this.currentSpaces.forEach((space, index) => {
+                this.currentSpaces.forEach((space, index) => {
 					if (!space.geometry) return;
 
 					// derive category color and phase coverage
@@ -1339,6 +1345,56 @@ class LogisticsMap {
 									}
 								}
 							});
+                // Draw watermarks on top so they are not covered by shapes
+                this.currentSpaces.forEach((space) => {
+                    try {
+                        if (!space || !space.geometry) return;
+                        // Determine label text from multiple fields
+                        const labelText = space.trade || space.company || space.company_name || space.owner || space.owned_by || '';
+                        if (!labelText) return;
+
+                        // Determine a representative polygon to anchor the label
+                        let coordinates = null;
+                        if (space.geometry.type === 'Polygon') {
+                            coordinates = space.geometry.coordinates[0];
+                        } else if (space.geometry.type === 'FeatureCollection' && Array.isArray(space.geometry.features)) {
+                            // Prefer the crane pad if present, otherwise first polygon
+                            let pad = space.geometry.features.find(f => f && f.properties && f.properties.part === 'pad' && f.geometry && f.geometry.type === 'Polygon');
+                            let firstPoly = space.geometry.features.find(f => f && f.geometry && f.geometry.type === 'Polygon');
+                            const poly = pad || firstPoly;
+                            if (poly) coordinates = poly.geometry.coordinates[0];
+                        } else {
+                            // Skip lines for watermark overlay
+                            return;
+                        }
+                        if (!coordinates) return;
+                        const pixelCoords = coordinates.map(coord => {
+                            const latLng = L.latLng(coord[1], coord[0]);
+                            return this.map.latLngToContainerPoint(latLng);
+                        });
+                        const scaled = pixelCoords.map(p => ({ x: p.x * 2, y: p.y * 2 }));
+                        if (scaled.length < 3) return;
+                        const cx = scaled.reduce((s,p)=>s+p.x,0)/scaled.length;
+                        const cy = scaled.reduce((s,p)=>s+p.y,0)/scaled.length;
+                        const minX = Math.min.apply(null, scaled.map(p=>p.x));
+                        const maxX = Math.max.apply(null, scaled.map(p=>p.x));
+                        const width = Math.max(20, maxX - minX);
+                        // Font size based on polygon width, clamped
+                        const fontSize = Math.max(12, Math.min(22, Math.round(width * 0.06)));
+                        finalCtx.save();
+                        finalCtx.translate(cx, cy);
+                        finalCtx.rotate(Math.PI/4);
+                        finalCtx.font = `bold ${fontSize}px Arial`;
+                        finalCtx.textAlign = 'center';
+                        finalCtx.textBaseline = 'middle';
+                        finalCtx.lineWidth = 3;
+                        finalCtx.strokeStyle = 'rgba(0,0,0,0.8)';
+                        finalCtx.strokeText(labelText, 0, 0);
+                        finalCtx.fillStyle = 'rgba(255,255,255,0.85)';
+                        finalCtx.fillText(labelText, 0, 0);
+                        finalCtx.restore();
+                    } catch(_) {}
+                });
 							console.log(`🔧 Drew crane shape ${index}`);
 						} catch(e) { console.warn('⚠️ Error drawing crane FeatureCollection', e); }
 					}
