@@ -221,13 +221,13 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         // Load projects from database
         const loadProjectsAttempt = async () => {
-            await loadProjectsFromDatabase();
+        await loadProjectsFromDatabase();
         };
         try {
             await loadProjectsAttempt();
         } catch (e) {
             console.error('❌ Failed to load projects:', e);
-            showError('Can’t reach the database right now. Check your internet or credentials, then retry.', loadProjectsAttempt);
+            showError("Can't reach the database right now. Check your internet or credentials, then retry.", loadProjectsAttempt);
             throw e;
         }
         
@@ -260,7 +260,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 const proj = PROJECTS[targetKey];
                 if (window.ToolUI && typeof window.ToolUI.setCurrentProjectName === 'function') {
                     window.ToolUI.setCurrentProjectName(proj && proj.name);
-                } else {
+            } else {
                     updateCurrentProjectBanner(targetKey);
                 }
             } catch(_) {}
@@ -333,8 +333,8 @@ function initializeMap() {
     if (window.ToolMap && typeof window.ToolMap.attachAutoSwitch === 'function') {
         try { window.ToolMap.attachAutoSwitch(map, satelliteLayer, streetLayer, hybridLayer); } catch(_) {}
     } else {
-        map.on('zoomend', function() {
-            const currentZoom = map.getZoom();
+    map.on('zoomend', function() {
+        const currentZoom = map.getZoom();
             const switchZoom = (window.ToolMap && typeof window.ToolMap.getSwitchZoom === 'function') 
                 ? window.ToolMap.getSwitchZoom() 
                 : (CONFIG?.streetSwitchZoom ?? 15);
@@ -343,16 +343,16 @@ function initializeMap() {
                 : (map.hasLayer(satelliteLayer) ? 'satellite' : (map.hasLayer(hybridLayer) ? 'hybrid' : 'street'));
             
             if (currentLayer === 'street' && currentZoom > switchZoom) {
-                map.removeLayer(streetLayer);
-                satelliteLayer.addTo(map);
-                updateDrawingStatus('Switched to satellite view for higher zoom');
+            map.removeLayer(streetLayer);
+            satelliteLayer.addTo(map);
+            updateDrawingStatus('Switched to satellite view for higher zoom');
             } else if ((currentLayer === 'satellite' || currentLayer === 'hybrid') && currentZoom <= switchZoom) {
                 if (map.hasLayer(satelliteLayer)) map.removeLayer(satelliteLayer);
                 if (map.hasLayer(hybridLayer)) map.removeLayer(hybridLayer);
-                streetLayer.addTo(map);
-                updateDrawingStatus('Switched to street view');
-            }
-        });
+            streetLayer.addTo(map);
+            updateDrawingStatus('Switched to street view');
+        }
+    });
     }
     
     // Initialize drawing layer
@@ -457,73 +457,81 @@ function startBrickAnimation() {
     const brickWall = document.getElementById('brickWall');
     if (!brickWall) return;
 
-    let brickCount = 0;
-    let currentRow = 0;
-    const maxRows = 5;
-    const bricksPerRow = 4;
-    const brickWidth = 40;
-    const brickHeight = 20;
-    const rowOffset = brickWidth / 2;
-
-    const addBrick = () => {
-        if (brickCount >= bricksPerRow * maxRows) {
-            // Reset animation
-            brickCount = 0;
-            currentRow = 0;
+    // Prepare high-DPI canvas for smooth, jank-free animation
             brickWall.innerHTML = '';
-            setTimeout(addBrick, 500);
-            return;
+    const canvas = document.createElement('canvas');
+    canvas.style.width = '200px';
+    canvas.style.height = '240px';
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    canvas.width = 200 * dpr;
+    canvas.height = 240 * dpr;
+    brickWall.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+
+    // Brick layout
+    const rows = 5;
+    const perRow = 4;
+    const bw = 40;
+    const bh = 20;
+    const rowOffset = bw / 2;
+    const total = rows * perRow;
+
+    // Timings
+    const appearMs = 110; // time between bricks
+    const riseMs = 220;   // rise animation duration per brick
+    const resetDelay = 700;
+
+    let start = performance.now();
+    let rafId = 0;
+
+    const ease = t => t < 0 ? 0 : t > 1 ? 1 : (1 - Math.cos(Math.PI * t)) / 2; // cosine ease
+
+    function draw(now) {
+        const t = now - start;
+        // Smooth background clear
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Draw built bricks
+        for (let i = 0; i < total; i++) {
+            const row = Math.floor(i / perRow);
+            const col = i % perRow;
+            const x = col * bw + (row % 2) * rowOffset;
+            const y = row * bh;
+
+            const appearAt = i * appearMs;
+            const prog = ease((t - appearAt) / riseMs);
+            if (prog <= 0) continue;
+
+            // Brick body with subtle gradient
+            const grad = ctx.createLinearGradient(x, y, x + bw, y + bh);
+            grad.addColorStop(0, '#1e40af');
+            grad.addColorStop(1, '#3b82f6');
+            ctx.fillStyle = grad;
+            ctx.strokeStyle = '#172554';
+            ctx.lineWidth = 2;
+
+            const yy = y - (1 - prog) * 18; // rise from above
+            ctx.beginPath();
+            ctx.rect(Math.round(x) + 1, Math.round(yy) + 1, bw - 2, bh - 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // highlight mortar lines
+            ctx.fillStyle = 'rgba(255,255,255,0.25)';
+            ctx.fillRect(Math.round(x) + 3, Math.round(yy) + 4, bw - 6, 3);
         }
 
-        const row = Math.floor(brickCount / bricksPerRow);
-        const positionInRow = brickCount % bricksPerRow;
-
-        const brick = document.createElement('div');
-        brick.className = 'brick';
-
-        const x = positionInRow * brickWidth + (row % 2) * rowOffset;
-        const y = row * brickHeight;
-
-        brick.style.left = x + 'px';
-        brick.style.top = y + 'px';
-        brick.style.animationDelay = (brickCount * 0.1) + 's';
-
-        brickWall.appendChild(brick);
-
-        brickCount++;
-
-        if (brickCount % bricksPerRow === 0 && brickCount > 0) {
-            currentRow++;
-            if (currentRow >= maxRows) {
-                setTimeout(() => {
-                    brickWall.classList.add('dropping');
-                    setTimeout(() => {
-                        brickWall.classList.remove('dropping');
-                        const bricks = brickWall.querySelectorAll('.brick');
-                        for (let i = 0; i < bricksPerRow; i++) {
-                            if (bricks[i]) {
-                                bricks[i].remove();
-                            }
-                        }
-                        const remainingBricks = brickWall.querySelectorAll('.brick');
-                        remainingBricks.forEach((brick, index) => {
-                            const row = Math.floor(index / bricksPerRow);
-                            const positionInRow = index % bricksPerRow;
-                            const x = positionInRow * brickWidth + (row % 2) * rowOffset;
-                            const y = row * brickHeight;
-                            brick.style.left = x + 'px';
-                            brick.style.top = y + 'px';
-                        });
-                        currentRow = maxRows - 1;
-                    }, 200);
-                }, 300);
-            }
+        // Restart once wall is completed
+        if (t > total * appearMs + riseMs + resetDelay) {
+            start = now;
         }
-        
-        // Continue adding bricks
-        setTimeout(addBrick, 150);
-    };
-    addBrick();
+        rafId = requestAnimationFrame(draw);
+    }
+
+    // Start rAF loop and store id for cleanup if needed
+    try { cancelAnimationFrame(brickWall._rafId); } catch(_) {}
+    brickWall._rafId = requestAnimationFrame(draw);
 }
 
 // Populate company dropdown
@@ -1422,9 +1430,57 @@ function onShapeCreated(e) {
         Double-click to edit | Use Undo to remove
     `);
     
-    // Set up rectangle measurements if this is a rectangle
+    // Set up rectangle as rotatable polygon if drawn via rectangle tool
     if (e.layerType === 'rectangle' || layer instanceof L.Rectangle) {
-        setupRectangleMeasurements(layer);
+        try {
+            const rectLatLngs = layer.getLatLngs()[0]; // rectangle returns 1 ring
+            const poly = L.polygon(rectLatLngs, {
+                color: '#0078d4',
+                weight: 3,
+                fill: true,
+                fillOpacity: 0.15
+            });
+            try { drawnItems.removeLayer(layer); } catch(_) {}
+            drawnItems.addLayer(poly);
+            currentShape = poly;
+
+            // Bind similar popup
+            const rectArea = L.GeometryUtil.geodesicArea(poly.getLatLngs()[0]);
+            const rectAreaSqFt = Math.round(rectArea * 10.764);
+            poly.bindPopup(`
+                <strong>Drawn Area</strong><br>
+                Area: ${rectAreaSqFt} sq ft<br>
+                ${companyName ? `Company: ${companyName}<br>` : ''}
+                Double-click to edit | Use Undo to remove
+            `);
+
+            // Distance labels
+            addDistanceLabels(poly);
+
+            // Enable rotation via draggable handle
+            enablePolygonRotation(poly);
+
+            // Replace references in undo stack
+            undoStack.push({ action: 'draw', shape: poly });
+            updateUndoButton();
+
+            // Click/dblclick behavior
+            poly.on('click', function(){ currentShape = poly; updateSubmitButton(); });
+            poly.on('dblclick', function(){
+                // Use custom rectangle scale mode
+                try { disableRectScaleMode(poly); } catch(_) {}
+                enableRectScaleMode(poly);
+            });
+
+            // Live updates while vertex editing
+            poly.on('edit', function(){ try { addDistanceLabels(poly); } catch(_) {} });
+
+            updateDrawingStatus(`Shape created - Area: ${rectAreaSqFt} sq ft`);
+            updateSubmitButton();
+            return; // finished rectangle branch
+        } catch (errRect) {
+            console.warn('Failed to convert rectangle to rotatable polygon:', errRect);
+        }
     }
     
     // Handle fence measurements if this is a polyline (fence)
@@ -1495,6 +1551,24 @@ function onShapeCreated(e) {
                 }
             });
 
+            // Dynamic measurement updates while editing this fence
+            newFenceLayer.on('edit', function() {
+                try {
+                    addFenceDistanceLabels(newFenceLayer);
+                    const pts = newFenceLayer.getLatLngs();
+                    let len = 0;
+                    for (let i = 0; i < pts.length - 1; i++) len += calculateDistanceInFeet(pts[i], pts[i+1]);
+                    if (newFenceLayer.getPopup && newFenceLayer.getPopup()) {
+                        newFenceLayer.getPopup().setContent(`
+                            <strong>Fence</strong><br>
+                            Total Length: ${len.toFixed(1)} ft<br>
+                            Segments: ${Math.max(0, pts.length - 1)}<br>
+                            Double-click to edit | Use Undo to remove
+                        `);
+                    }
+                } catch(_) {}
+            });
+
             // Update undo stack to reference the new layer
             if (undoStack.length > 0 && undoStack[undoStack.length - 1].action === 'draw') {
                 undoStack[undoStack.length - 1].shape = newFenceLayer;
@@ -1533,6 +1607,17 @@ function onShapeCreated(e) {
         }
     });
     
+    // Dynamic measurement updates while editing polygons/rectangles
+    layer.on('edit', function() {
+        try {
+            if (layer instanceof L.Rectangle) {
+                updateRectangleMeasurements(layer);
+            } else if (layer instanceof L.Polygon) {
+                addDistanceLabels(layer);
+            }
+        } catch(_) {}
+    });
+    
     // Only add distance measurements if we don't already have them from drawing
     if (drawingMarkers.length === 0) {
         addDistanceLabels(layer);
@@ -1554,28 +1639,51 @@ function onShapeCreated(e) {
 function onShapeEdited(e) {
     const layers = e.layers;
     layers.eachLayer(function(layer) {
+        // Update per type to avoid applying polygon logic to polylines
+        if (layer instanceof L.Rectangle) {
+            // Rectangle: update its custom measurements and popup area
+            updateRectangleMeasurements(layer);
+            try {
         const area = L.GeometryUtil.geodesicArea(layer.getLatLngs()[0]);
         const areaSqFt = Math.round(area * 10.764);
-        
+                if (layer.getPopup && layer.getPopup()) {
         layer.getPopup().setContent(`
             <strong>Drawn Area</strong><br>
             Area: ${areaSqFt} sq ft<br>
             Click to edit or delete
         `);
-        
-        // Removed requestedArea field
-        
-        // Update distance labels after editing
-        addDistanceLabels(layer);
-        
-        // Update rectangle measurements if this is a rectangle
-        if (layer.constructor.name === 'Rectangle') {
-            updateRectangleMeasurements(layer);
-        }
-        
-        // Update fence measurements if this is a polyline (fence)
-        if (layer.constructor.name === 'Polyline' && !(layer instanceof L.Polygon)) {
+                }
+            } catch(_) {}
+        } else if (layer instanceof L.Polygon) {
+            // Polygon: update area popup and segment labels
+            try {
+                const area = L.GeometryUtil.geodesicArea(layer.getLatLngs()[0]);
+                const areaSqFt = Math.round(area * 10.764);
+                if (layer.getPopup && layer.getPopup()) {
+                    layer.getPopup().setContent(`
+                        <strong>Drawn Area</strong><br>
+                        Area: ${areaSqFt} sq ft<br>
+                        Click to edit or delete
+                    `);
+                }
+            } catch(_) {}
+            addDistanceLabels(layer);
+        } else if (layer instanceof L.Polyline) {
+            // Fence/polyline: update segment labels and total length
             addFenceDistanceLabels(layer);
+            try {
+                const pts = layer.getLatLngs();
+                let len = 0;
+                for (let i = 0; i < pts.length - 1; i++) len += calculateDistanceInFeet(pts[i], pts[i+1]);
+                if (layer.getPopup && layer.getPopup()) {
+                    layer.getPopup().setContent(`
+                        <strong>Fence</strong><br>
+                        Total Length: ${len.toFixed(1)} ft<br>
+                        Segments: ${Math.max(0, pts.length - 1)}<br>
+                        Double-click to edit | Use Undo to remove
+                    `);
+                }
+            } catch(_) {}
         }
     });
     
@@ -3355,11 +3463,11 @@ function updateDrawingStatus(message, type = 'ready') {
     }
     // Fallback in case helper is unavailable
     try {
-        const statusDot = document.querySelector('.status-dot');
-        const statusText = document.querySelector('.status-text');
+    const statusDot = document.querySelector('.status-dot');
+    const statusText = document.querySelector('.status-text');
         if (statusText) statusText.textContent = message;
         if (!statusDot) return;
-        statusDot.classList.remove('drawing', 'error');
+    statusDot.classList.remove('drawing', 'error');
         if (type === 'drawing') statusDot.classList.add('drawing');
         else if (type === 'error') statusDot.classList.add('error');
     } catch(_) {}
@@ -4165,7 +4273,7 @@ function displaySavedSpace(space) {
                 return;
             }
         }
-
+        
         let shapeColor, fillColor;
         
         if (isCraneShape) {
@@ -5117,3 +5225,452 @@ window.StagingSpaceTool = {
     resetForm: resetForm,
     submitRequest: submitRequest
 };
+
+// --- Rotation helpers for polygons (used for converted rectangles) ---
+function clearDistanceLabels(layer) {
+    try {
+        if (layer && layer.distanceLabels && Array.isArray(layer.distanceLabels)) {
+            layer.distanceLabels.forEach(lbl => { try { map.removeLayer(lbl); } catch(_) {} });
+            layer.distanceLabels = [];
+        }
+    } catch(_) {}
+}
+
+function enablePolygonRotation(polygon) {
+    try {
+        const center = polygon.getBounds().getCenter();
+        const centerPt = map.latLngToLayerPoint(center);
+        const ring = polygon.getLatLngs()[0];
+        if (!ring || ring.length === 0) return;
+
+        // Place handle offset from the first vertex outward
+        const first = ring[0];
+        const firstPt = map.latLngToLayerPoint(first);
+        const vec = L.point(firstPt.x - centerPt.x, firstPt.y - centerPt.y);
+        const mag = Math.max(40, Math.hypot(vec.x, vec.y));
+        const handlePt = L.point(centerPt.x + (vec.x / (mag || 1)) * (mag + 30), centerPt.y + (vec.y / (mag || 1)) * (mag + 30));
+        const handleLatLng = map.layerPointToLatLng(handlePt);
+
+        const handleIcon = L.divIcon({
+            className: 'rotate-handle',
+            html: `<div style="
+                width: 28px; height: 28px; border-radius: 50%;
+                background: #ffffff; border: 2px solid #3b82f6;
+                display: flex; align-items: center; justify-content: center;
+                color: #1f2937; box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+            "><i class="fas fa-rotate-right"></i></div>`,
+            iconSize: [28, 28],
+            iconAnchor: [14, 14]
+        });
+
+        const handle = L.marker(handleLatLng, { draggable: true, opacity: 0.95, title: 'Rotate', icon: handleIcon }).addTo(map);
+        polygon._rotateHandle = handle;
+        polygon._rotationCenter = center;
+        polygon._originalRing = ring.map(ll => ({ lat: ll.lat, lng: ll.lng }));
+
+        let startAngle = null;
+        handle.on('dragstart', () => {
+            const c = map.latLngToLayerPoint(polygon._rotationCenter);
+            const h = map.latLngToLayerPoint(handle.getLatLng());
+            startAngle = Math.atan2(h.y - c.y, h.x - c.x);
+            polygon._originalRing = polygon.getLatLngs()[0].map(ll => ({ lat: ll.lat, lng: ll.lng }));
+            // If edit mode is active, temporarily disable to avoid stale handles
+            try {
+                const editHandler = map?._drawControl?._toolbars?.edit?._modes?.edit?.handler;
+                if (editHandler && (editHandler._enabled || editHandler.enabled)) {
+                    polygon._resumeEditAfterRotate = true;
+                    editHandler.disable();
+                }
+            } catch(_) {}
+        });
+        handle.on('drag', () => {
+            if (startAngle === null) return;
+            const c = map.latLngToLayerPoint(polygon._rotationCenter);
+            const h = map.latLngToLayerPoint(handle.getLatLng());
+            const curAngle = Math.atan2(h.y - c.y, h.x - c.x);
+            const delta = curAngle - startAngle;
+            // Rotate original ring by delta
+            const rotated = polygon._originalRing.map(ll => rotatePointAround(ll, polygon._rotationCenter, delta));
+            polygon.setLatLngs([rotated]);
+            try { addDistanceLabels(polygon); } catch(_) {}
+            try { updatePolygonWatermark(polygon); } catch(_) {}
+            try {
+                const a = L.GeometryUtil.geodesicArea(rotated);
+                const aFt = Math.round(a * 10.764);
+                if (polygon.getPopup && polygon.getPopup()) {
+                    polygon.getPopup().setContent(`
+                        <strong>Drawn Area</strong><br>
+                        Area: ${aFt} sq ft<br>
+                        Double-click to edit | Use Undo to remove
+                    `);
+                }
+            } catch(_) {}
+        });
+        handle.on('dragend', () => {
+            // Recompute center and reposition handle a bit away
+            try {
+                polygon._rotationCenter = polygon.getBounds().getCenter();
+                repositionPolygonRotateHandle(polygon);
+            } catch(_) {}
+            // Reset baseline ring to current geometry
+            try {
+                polygon._originalRing = (polygon.getLatLngs()[0] || []).map(ll => ({ lat: ll.lat, lng: ll.lng }));
+            } catch(_) {}
+
+            // Replace polygon instance to force fresh edit handles
+            try {
+                const latlngsNow = (polygon.getLatLngs()[0] || []).map(ll => L.latLng(ll.lat, ll.lng));
+                const popupContent = (polygon.getPopup && polygon.getPopup()) ? polygon.getPopup().getContent() : null;
+                const existingWatermark = polygon._watermarkMarker || null;
+
+                // Remove old labels and handle
+                try { clearDistanceLabels(polygon); } catch(_) {}
+                try { if (polygon._rotateHandle) map.removeLayer(polygon._rotateHandle); } catch(_) {}
+
+                // Remove old polygon from groups
+                try { drawnItems.removeLayer(polygon); } catch(_) { try { map.removeLayer(polygon); } catch(_) {} }
+
+                // Create new polygon and add to drawnItems
+                const newPoly = L.polygon(latlngsNow, { color: '#0078d4', weight: 3, fill: true, fillOpacity: 0.15 });
+                drawnItems.addLayer(newPoly);
+                currentShape = newPoly;
+
+                // Mark as rectangle-locked
+                try { newPoly._rectLocked = true; } catch(_) {}
+
+                // Restore popup
+                if (popupContent) { try { newPoly.bindPopup(popupContent); } catch(_) {} }
+
+                // Restore watermark
+                if (existingWatermark) {
+                    try {
+                        const center = newPoly.getBounds().getCenter();
+                        existingWatermark.setLatLng(center);
+                        newPoly._watermarkMarker = existingWatermark;
+                    } catch(_) {}
+                } else {
+                    try { updateCurrentShapeWatermark(); } catch(_) {}
+                }
+
+                // Add labels and rotation to new polygon
+                try { addDistanceLabels(newPoly); } catch(_) {}
+                try { enablePolygonRotation(newPoly); } catch(_) {}
+
+                // Wire basic click/dblclick
+                newPoly.on('click', function(){ currentShape = newPoly; updateSubmitButton(); });
+                newPoly.on('dblclick', function(){
+                    // Use custom rectangle scale mode
+                    try { disableRectScaleMode(newPoly); } catch(_) {}
+                    enableRectScaleMode(newPoly);
+                });
+
+                // Refresh edit mode handles and select this polygon
+                try {
+                    const editToolbar = map?._drawControl?._toolbars?.edit;
+                    const editHandler = editToolbar?._modes?.edit?.handler;
+                    if (editHandler) {
+                        try { editHandler.disable(); } catch(_) {}
+                        try { editHandler.enable(); } catch(_) {}
+                        setTimeout(() => {
+                            try {
+                                const group = editHandler._markersGroup || editHandler._featureGroup || null;
+                                if (group && typeof group.eachLayer === 'function') {
+                                    group.eachLayer(function(marker){
+                                        if (marker && marker._shape === newPoly) { try { marker.fire('click'); } catch(_) {} }
+                                    });
+                                }
+                            } catch(_) {}
+                        }, 80);
+                    }
+                } catch(_) {}
+            } catch(_) {}
+
+            // Clear resume flag
+            polygon._resumeEditAfterRotate = false;
+        });
+
+        // Clean up handle and labels if polygon removed
+        polygon.on('remove', () => {
+            try { if (polygon._rotateHandle) map.removeLayer(polygon._rotateHandle); } catch(_) {}
+            try { clearDistanceLabels(polygon); } catch(_) {}
+            try { if (polygon._watermarkMarker) map.removeLayer(polygon._watermarkMarker); } catch(_) {}
+        });
+
+        // Also reposition handle whenever polygon is edited (vertices moved)
+        polygon.on('edit', () => {
+            try {
+                polygon._rotationCenter = polygon.getBounds().getCenter();
+                repositionPolygonRotateHandle(polygon);
+                updatePolygonWatermark(polygon);
+            } catch(_) {}
+        });
+    } catch (err) {
+        console.warn('Failed to enable rotation on polygon:', err);
+    }
+}
+
+function repositionPolygonRotateHandle(polygon) {
+    try {
+        if (!polygon._rotateHandle) return;
+        const center = polygon._rotationCenter || polygon.getBounds().getCenter();
+        const centerPt = map.latLngToLayerPoint(center);
+        const ring = polygon.getLatLngs()[0];
+        if (!ring || ring.length === 0) return;
+        const firstPt = map.latLngToLayerPoint(ring[0]);
+        const vec = L.point(firstPt.x - centerPt.x, firstPt.y - centerPt.y);
+        const mag = Math.max(40, Math.hypot(vec.x, vec.y));
+        const handlePt = L.point(centerPt.x + (vec.x / (mag || 1)) * (mag + 30), centerPt.y + (vec.y / (mag || 1)) * (mag + 30));
+        const handleLatLng = map.layerPointToLatLng(handlePt);
+        polygon._rotateHandle.setLatLng(handleLatLng);
+    } catch(_) {}
+}
+
+function updatePolygonWatermark(polygon) {
+    try {
+        const center = polygon.getBounds().getCenter();
+        if (polygon._watermarkMarker) {
+            polygon._watermarkMarker.setLatLng(center);
+        } else if (polygon === currentShape) {
+            updateCurrentShapeWatermark();
+        }
+    } catch(_) {}
+}
+
+function rotatePointAround(latlng, centerLatLng, angleRad) {
+    try {
+        const p = map.latLngToLayerPoint(latlng);
+        const c = map.latLngToLayerPoint(centerLatLng);
+        const dx = p.x - c.x;
+        const dy = p.y - c.y;
+        const cos = Math.cos(angleRad);
+        const sin = Math.sin(angleRad);
+        const rx = dx * cos - dy * sin;
+        const ry = dx * sin + dy * cos;
+        const rp = L.point(c.x + rx, c.y + ry);
+        return map.layerPointToLatLng(rp);
+    } catch(_) { return latlng; }
+}
+
+// --- Rect model helpers for rotated-rectangle scale mode ---
+function _latLngsToPoints(latlngs) {
+    return latlngs.map(ll => map.latLngToLayerPoint(ll));
+}
+function _pointsToLatLngs(points) {
+    return points.map(p => map.layerPointToLatLng(p));
+}
+function _unit(vx, vy) {
+    const m = Math.hypot(vx, vy) || 1; return { x: vx / m, y: vy / m };
+}
+function _dot(ax, ay, bx, by) { return ax * bx + ay * by; }
+function _add(p, q) { return L.point(p.x + q.x, p.y + q.y); }
+function _sub(p, q) { return L.point(p.x - q.x, p.y - q.y); }
+function _mul(p, s) { return L.point(p.x * s, p.y * s); }
+
+function computeRectModelFromPolygon(polygon) {
+    try {
+        const ring = polygon.getLatLngs()[0];
+        if (!ring || ring.length < 4) return null;
+        const corners = [ring[0], ring[1], ring[2], ring[3]];
+        const pts = _latLngsToPoints(corners);
+        const center = L.point(
+            (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4,
+            (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4
+        );
+        const uVec = _unit(pts[1].x - pts[0].x, pts[1].y - pts[0].y); // width axis
+        const vVec = _unit(-(uVec.y), uVec.x); // height axis (90 deg)
+        const halfWidth = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y) / 2;
+        const halfHeight = Math.hypot(pts[2].x - pts[1].x, pts[2].y - pts[1].y) / 2;
+        const angle = Math.atan2(uVec.y, uVec.x);
+        return { center, halfWidth, halfHeight, angle, uVec, vVec };
+    } catch(_) { return null; }
+}
+
+function buildRectLatLngsFromModel(model) {
+    const { center, halfWidth: hw, halfHeight: hh, uVec, vVec } = model;
+    const p0 = _add(_add(center, _mul(L.point(uVec.x, uVec.y), -hw)), _mul(L.point(vVec.x, vVec.y), -hh));
+    const p1 = _add(_add(center, _mul(L.point(uVec.x, uVec.y),  hw)), _mul(L.point(vVec.x, vVec.y), -hh));
+    const p2 = _add(_add(center, _mul(L.point(uVec.x, uVec.y),  hw)), _mul(L.point(vVec.x, vVec.y),  hh));
+    const p3 = _add(_add(center, _mul(L.point(uVec.x, uVec.y), -hw)), _mul(L.point(vVec.x, vVec.y),  hh));
+    return _pointsToLatLngs([p0, p1, p2, p3]);
+}
+
+function enableRectScaleMode(polygon) {
+    try {
+        if (polygon._rectScaleActive) return;
+        polygon._rectScaleActive = true;
+
+        // Turn off default edit while in scale mode (avoid vertex handles)
+        try {
+            const editHandler = map?._drawControl?._toolbars?.edit?._modes?.edit?.handler;
+            if (editHandler && (editHandler._enabled || editHandler.enabled)) {
+                polygon._resumeEditAfterScale = true;
+                editHandler.disable();
+            }
+        } catch(_) {}
+
+        // Clear old custom handles
+        try {
+            if (polygon._rectScaleHandlesMid) polygon._rectScaleHandlesMid.forEach(h => { try { map.removeLayer(h); } catch(_){} });
+            if (polygon._rectScaleHandlesCorner) polygon._rectScaleHandlesCorner.forEach(h => { try { map.removeLayer(h); } catch(_){} });
+        } catch(_){}
+        polygon._rectScaleHandlesMid = [];
+        polygon._rectScaleHandlesCorner = [];
+
+        const model = computeRectModelFromPolygon(polygon);
+        if (!model) return;
+        polygon._rectModel = model;
+        const corners = polygon.getLatLngs()[0];
+        const mids = [
+            L.latLng((corners[0].lat + corners[1].lat) / 2, (corners[0].lng + corners[1].lng) / 2),
+            L.latLng((corners[1].lat + corners[2].lat) / 2, (corners[1].lng + corners[2].lng) / 2),
+            L.latLng((corners[2].lat + corners[3].lat) / 2, (corners[2].lng + corners[3].lng) / 2),
+            L.latLng((corners[3].lat + corners[0].lat) / 2, (corners[3].lng + corners[0].lng) / 2)
+        ];
+
+        const midIcon = L.divIcon({
+            className: 'rect-scale-handle',
+            html: '<div style="width:18px;height:18px;border-radius:4px;background:#ffffff;border:2px solid #10b981;box-shadow:0 2px 6px rgba(0,0,0,0.25);"></div>',
+            iconSize: [18, 18], iconAnchor: [9, 9]
+        });
+        const cornerIcon = L.divIcon({
+            className: 'rect-corner-handle',
+            html: '<div style="width:16px;height:16px;border-radius:50%;background:#ffffff;border:2px solid #0ea5e9;box-shadow:0 2px 6px rgba(0,0,0,0.25);"></div>',
+            iconSize: [16, 16], iconAnchor: [8, 8]
+        });
+
+        // Mid-edge handles: scale one dimension
+        mids.forEach((midLatLng, idx) => {
+            const handle = L.marker(midLatLng, { draggable: true, icon: midIcon, title: 'Scale' }).addTo(map);
+            polygon._rectScaleHandlesMid.push(handle);
+            let startPt = null;
+            let startModel = null;
+            handle.on('dragstart', () => {
+                startPt = map.latLngToLayerPoint(handle.getLatLng());
+                startModel = computeRectModelFromPolygon(polygon);
+                polygon._rectModel = startModel;
+            });
+            handle.on('drag', () => {
+                if (!startPt || !startModel) return;
+                const curPt = map.latLngToLayerPoint(handle.getLatLng());
+                const delta = L.point(curPt.x - startPt.x, curPt.y - startPt.y);
+                const u = startModel.uVec; const v = startModel.vVec;
+                let model = { ...startModel };
+                if (idx === 0 || idx === 2) {
+                    // width edge → adjust height along v
+                    const signed = _dot(delta.x, delta.y, v.x, v.y);
+                    model.halfHeight = Math.max(1, startModel.halfHeight + (idx === 0 ? -signed : signed));
+                    const centerShift = (idx === 0 ? -signed : signed) / 2;
+                    model.center = _add(startModel.center, _mul(L.point(v.x, v.y), centerShift));
+                } else {
+                    // height edge → adjust width along u
+                    const signed = _dot(delta.x, delta.y, u.x, u.y);
+                    model.halfWidth = Math.max(1, startModel.halfWidth + (idx === 3 ? -signed : signed));
+                    const centerShift = (idx === 3 ? -signed : signed) / 2;
+                    model.center = _add(startModel.center, _mul(L.point(u.x, u.y), centerShift));
+                }
+                const newCorners = buildRectLatLngsFromModel(model);
+                polygon.setLatLngs([newCorners]);
+                updateRectScaleHandles(polygon);
+                try { addDistanceLabels(polygon); } catch(_) {}
+                try { updatePolygonWatermark(polygon); } catch(_) {}
+            });
+            handle.on('dragend', () => {
+                const mdl = computeRectModelFromPolygon(polygon);
+                if (mdl) polygon._rectModel = mdl;
+            });
+        });
+
+        // Corner handles: scale both dimensions
+        corners.forEach((cornerLL, idx) => {
+            const handle = L.marker(cornerLL, { draggable: true, icon: cornerIcon, title: 'Resize' }).addTo(map);
+            polygon._rectScaleHandlesCorner.push(handle);
+            let startPt = null;
+            let startModel = null;
+            handle.on('dragstart', () => {
+                startPt = map.latLngToLayerPoint(handle.getLatLng());
+                startModel = computeRectModelFromPolygon(polygon);
+                polygon._rectModel = startModel;
+            });
+            handle.on('drag', () => {
+                if (!startPt || !startModel) return;
+                const curPt = map.latLngToLayerPoint(handle.getLatLng());
+                const delta = L.point(curPt.x - startPt.x, curPt.y - startPt.y);
+                const u = startModel.uVec; const v = startModel.vVec;
+                // Corner signs relative to u and v axes
+                const signU = (idx === 0 || idx === 3) ? -1 : 1; // left corners reduce u
+                const signV = (idx === 0 || idx === 1) ? -1 : 1; // top corners reduce v
+                const du = _dot(delta.x, delta.y, u.x, u.y) * signU;
+                const dv = _dot(delta.x, delta.y, v.x, v.y) * signV;
+                let model = { ...startModel };
+                model.halfWidth = Math.max(1, startModel.halfWidth + du);
+                model.halfHeight = Math.max(1, startModel.halfHeight + dv);
+                // Center shifts half of each
+                model.center = _add(
+                    _add(startModel.center, _mul(L.point(u.x, u.y), du / 2 * signU)),
+                    _mul(L.point(v.x, v.y), dv / 2 * signV)
+                );
+                const newCorners = buildRectLatLngsFromModel(model);
+                polygon.setLatLngs([newCorners]);
+                updateRectScaleHandles(polygon);
+                try { addDistanceLabels(polygon); } catch(_) {}
+                try { updatePolygonWatermark(polygon); } catch(_) {}
+            });
+            handle.on('dragend', () => {
+                const mdl = computeRectModelFromPolygon(polygon);
+                if (mdl) polygon._rectModel = mdl;
+            });
+        });
+
+        updateRectScaleHandles(polygon);
+    } catch(_) {}
+}
+
+function disableRectScaleMode(polygon) {
+    try {
+        if (!polygon._rectScaleActive) return;
+        polygon._rectScaleActive = false;
+        if (polygon._rectScaleHandlesMid) polygon._rectScaleHandlesMid.forEach(h => { try { map.removeLayer(h); } catch(_){} });
+        if (polygon._rectScaleHandlesCorner) polygon._rectScaleHandlesCorner.forEach(h => { try { map.removeLayer(h); } catch(_){} });
+        polygon._rectScaleHandlesMid = [];
+        polygon._rectScaleHandlesCorner = [];
+        // Optionally resume default edit mode and select this shape
+        try {
+            if (polygon._resumeEditAfterScale) {
+                const editHandler = map?._drawControl?._toolbars?.edit?._modes?.edit?.handler;
+                if (editHandler) {
+                    editHandler.enable();
+                    setTimeout(() => {
+                        try {
+                            const group = editHandler._markersGroup || editHandler._featureGroup || null;
+                            if (group && typeof group.eachLayer === 'function') {
+                                group.eachLayer(function(marker){
+                                    if (marker && marker._shape === polygon) { try { marker.fire('click'); } catch(_) {} }
+                                });
+                            }
+                        } catch(_) {}
+                    }, 60);
+                }
+            }
+        } catch(_) {}
+        polygon._resumeEditAfterScale = false;
+    } catch(_) {}
+}
+
+function updateRectScaleHandles(polygon) {
+    try {
+        const corners = polygon.getLatLngs()[0];
+        if (!corners || corners.length < 4) return;
+        const mids = [
+            L.latLng((corners[0].lat + corners[1].lat) / 2, (corners[0].lng + corners[1].lng) / 2),
+            L.latLng((corners[1].lat + corners[2].lat) / 2, (corners[1].lng + corners[2].lng) / 2),
+            L.latLng((corners[2].lat + corners[3].lat) / 2, (corners[2].lng + corners[3].lng) / 2),
+            L.latLng((corners[3].lat + corners[0].lat) / 2, (corners[3].lng + corners[0].lng) / 2)
+        ];
+        if (polygon._rectScaleHandlesMid) {
+            polygon._rectScaleHandlesMid.forEach((h, i) => { try { h.setLatLng(mids[i]); } catch(_){} });
+        }
+        if (polygon._rectScaleHandlesCorner) {
+            polygon._rectScaleHandlesCorner.forEach((h, i) => { try { h.setLatLng(corners[i]); } catch(_){} });
+        }
+    } catch(_) {}
+}

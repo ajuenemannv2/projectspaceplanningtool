@@ -1464,73 +1464,50 @@ class LogisticsMap {
         const brickWall = document.getElementById('brickWall');
         if (!brickWall) return;
 
-        let brickCount = 0;
-        let currentRow = 0;
-        const maxRows = 5;
-        const bricksPerRow = 4;
-        const brickWidth = 40;
-        const brickHeight = 20;
-        const rowOffset = brickWidth / 2;
+        brickWall.innerHTML = '';
+        const canvas = document.createElement('canvas');
+        canvas.style.width = '200px';
+        canvas.style.height = '240px';
+        const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        canvas.width = 200 * dpr;
+        canvas.height = 240 * dpr;
+        brickWall.appendChild(canvas);
+        const ctx = canvas.getContext('2d');
+        ctx.scale(dpr, dpr);
 
-        const addBrick = () => {
-            if (brickCount >= bricksPerRow * maxRows) {
-                // Reset animation
-                brickCount = 0;
-                currentRow = 0;
-                brickWall.innerHTML = '';
-                setTimeout(addBrick, 500);
-                return;
+        const rows = 5, perRow = 4, bw = 40, bh = 20, rowOffset = bw/2, total = rows*perRow;
+        const appearMs = 110, riseMs = 220, resetDelay = 700;
+        const ease = t => t < 0 ? 0 : t > 1 ? 1 : (1 - Math.cos(Math.PI * t)) / 2;
+
+        let start = performance.now();
+        function draw(now){
+            const t = now - start;
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            for (let i=0;i<total;i++){
+                const row = Math.floor(i/perRow), col = i%perRow;
+                const x = col*bw + (row%2)*rowOffset;
+                const y = row*bh;
+                const appearAt = i*appearMs;
+                const prog = ease((t-appearAt)/riseMs);
+                if (prog<=0) continue;
+                const yy = y - (1-prog)*18;
+                const grad = ctx.createLinearGradient(x,y,x+bw,y+bh);
+                grad.addColorStop(0, '#1e40af');
+                grad.addColorStop(1, '#3b82f6');
+                ctx.fillStyle = grad;
+                ctx.strokeStyle = '#172554';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.rect(Math.round(x)+1, Math.round(yy)+1, bw-2, bh-2);
+                ctx.fill();
+                ctx.stroke();
+                ctx.fillStyle = 'rgba(255,255,255,0.25)';
+                ctx.fillRect(Math.round(x)+3, Math.round(yy)+4, bw-6, 3);
             }
-
-            const row = Math.floor(brickCount / bricksPerRow);
-            const positionInRow = brickCount % bricksPerRow;
-
-            const brick = document.createElement('div');
-            brick.className = 'brick';
-
-            const x = positionInRow * brickWidth + (row % 2) * rowOffset;
-            const y = row * brickHeight;
-
-            brick.style.left = x + 'px';
-            brick.style.top = y + 'px';
-            brick.style.animationDelay = (brickCount * 0.1) + 's';
-
-            brickWall.appendChild(brick);
-
-            brickCount++;
-
-            if (brickCount % bricksPerRow === 0 && brickCount > 0) {
-                currentRow++;
-                if (currentRow >= maxRows) {
-                    setTimeout(() => {
-                        brickWall.classList.add('dropping');
-                        setTimeout(() => {
-                            brickWall.classList.remove('dropping');
-                            const bricks = brickWall.querySelectorAll('.brick');
-                            for (let i = 0; i < bricksPerRow; i++) {
-                                if (bricks[i]) {
-                                    bricks[i].remove();
-                                }
-                            }
-                            const remainingBricks = brickWall.querySelectorAll('.brick');
-                            remainingBricks.forEach((brick, index) => {
-                                const row = Math.floor(index / bricksPerRow);
-                                const positionInRow = index % bricksPerRow;
-                                const x = positionInRow * brickWidth + (row % 2) * rowOffset;
-                                const y = row * brickHeight;
-                                brick.style.left = x + 'px';
-                                brick.style.top = y + 'px';
-                            });
-                            currentRow = maxRows - 1;
-                        }, 200);
-                    }, 300);
-                }
-            }
-            
-            // Continue adding bricks
-            setTimeout(addBrick, 150);
-        };
-        addBrick();
+            if (t > total*appearMs + riseMs + resetDelay) start = now;
+            requestAnimationFrame(draw);
+        }
+        requestAnimationFrame(draw);
     }
 }
 
