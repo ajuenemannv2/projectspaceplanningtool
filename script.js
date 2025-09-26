@@ -2746,9 +2746,9 @@ function initializeEventListeners() {
         input.addEventListener('change', validateForm);
     });
     
-    // Button event listeners
-    document.getElementById('clearDrawing').addEventListener('click', clearDrawing);
-    document.getElementById('resetView').addEventListener('click', resetMapView);
+    // Button event listeners (legacy controls removed)
+    try { document.getElementById('clearDrawing')?.remove(); } catch(_) {}
+    try { document.getElementById('resetView')?.remove(); } catch(_) {}
     // Project change updates banner
     const projectSelect = document.getElementById('projectSelect');
     if (projectSelect) {
@@ -2767,15 +2767,16 @@ function initializeEventListeners() {
             } catch(_) {}
         });
     }
-    document.getElementById('previewRequest').addEventListener('click', previewRequest);
-    document.getElementById('submitRequest').addEventListener('click', submitRequest);
+    // Legacy request actions removed
+    try { document.getElementById('previewRequest')?.remove(); } catch(_) {}
+    try { document.getElementById('submitRequest')?.remove(); } catch(_) {}
     document.getElementById('saveSpace').addEventListener('click', saveSpace);
     
-    // Modal event listeners
-    document.getElementById('confirmSubmit').addEventListener('click', confirmSubmit);
-    document.getElementById('cancelSubmit').addEventListener('click', closePreviewModal);
-    document.getElementById('newRequest').addEventListener('click', resetForm);
-    document.getElementById('closeSuccess').addEventListener('click', closeSuccessModal);
+    // Modal event listeners (legacy modals removed)
+    try { document.getElementById('confirmSubmit')?.addEventListener('click', confirmSubmit); } catch(_) {}
+    try { document.getElementById('cancelSubmit')?.addEventListener('click', closePreviewModal); } catch(_) {}
+    try { document.getElementById('newRequest')?.addEventListener('click', resetForm); } catch(_) {}
+    try { document.getElementById('closeSuccess')?.addEventListener('click', closeSuccessModal); } catch(_) {}
     
     // Close modals when clicking outside
     window.addEventListener('click', function(event) {
@@ -2881,28 +2882,12 @@ function validateForm() {
 
 // Update submit button state
 function updateSubmitButton(isValid = null) {
-    const submitBtn = document.getElementById('submitRequest');
     const saveBtn = document.getElementById('saveSpace');
     const isValidForm = isValid !== null ? isValid : validateForm();
-    
-    // Update submit button
-    submitBtn.disabled = !isValidForm;
-    
-    if (isValidForm) {
-        submitBtn.classList.remove('btn-disabled');
-    } else {
-        submitBtn.classList.add('btn-disabled');
-    }
-    
-    // Update save button (same validation logic)
     if (saveBtn) {
         saveBtn.disabled = !isValidForm;
-        
-        if (isValidForm) {
-            saveBtn.classList.remove('btn-disabled');
-        } else {
-            saveBtn.classList.add('btn-disabled');
-        }
+        if (isValidForm) saveBtn.classList.remove('btn-disabled');
+        else saveBtn.classList.add('btn-disabled');
     }
 }
 
@@ -5054,15 +5039,10 @@ async function exportSpacesToTopoJSON(spaces) {
 }
 
 // Confirm submit (from preview modal)
-function confirmSubmit() {
-    closePreviewModal();
-    submitRequest();
-}
+function confirmSubmit() { /* legacy no-op */ }
 
 // Modal functions
-function closePreviewModal() {
-    document.getElementById('previewModal').style.display = 'none';
-}
+function closePreviewModal() { /* legacy no-op */ }
 
 function closeSuccessModal() {
     document.getElementById('successModal').style.display = 'none';

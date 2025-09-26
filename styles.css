@@ -696,7 +696,7 @@ body {
     display: flex;
     gap: var(--space-4);
     justify-content: center;
-    padding: var(--space-8);
+    padding: var(--space-6);
     background: white;
     border-radius: var(--radius-2xl);
     box-shadow: var(--shadow-xl);

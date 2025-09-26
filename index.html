@@ -27,6 +27,8 @@
     <script src="src/tool/data/spaces.js"></script>
     <script src="src/tool/ui/status.js"></script>
     <script src="src/tool/ui/undo.js"></script>
+    <script src="src/tool/map/reset.js"></script>
+    <script src="src/tool/ui/modals.js"></script>
 </head>
 <body>
     <div class="container">
@@ -104,12 +106,7 @@
                         <span class="eyebrow">Current project</span>
                         <span class="value" id="currentProjectName"></span>
                     </div>
-                    <div class="map-controls">
-                        <div class="drawing-controls">
-                            <button id="clearDrawing" class="btn btn-secondary">Clear Drawing</button>
-                            <button id="resetView" class="btn btn-secondary">Reset View</button>
-                        </div>
-                    </div>
+                    <div class="map-controls"></div>
                 </div>
                 <div id="map"></div>
                 
@@ -128,49 +125,9 @@
             <button id="saveSpace" class="btn btn-success" disabled>
                 Save Space
             </button>
-            <button id="previewRequest" class="btn btn-secondary">
-                Preview Space
-            </button>
-            <button id="submitRequest" class="btn btn-primary" disabled>
-                Export Project Spaces
-            </button>
         </div>
 
-        <!-- Preview Modal -->
-        <div id="previewModal" class="modal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>Request Preview</h3>
-                    <span class="close">&times;</span>
-                </div>
-                <div class="modal-body" id="previewContent">
-                    <!-- Preview content will be inserted here -->
-                </div>
-                <div class="modal-footer">
-                    <button id="confirmSubmit" class="btn btn-primary">Confirm & Submit</button>
-                    <button id="cancelSubmit" class="btn btn-secondary">Cancel</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Success Modal -->
-        <div id="successModal" class="modal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>Request Submitted Successfully!</h3>
-                    <span class="close">&times;</span>
-                </div>
-                <div class="modal-body">
-                    <p>Your staging space request has been submitted and is pending approval.</p>
-                    <p><strong>Request ID:</strong> <span id="requestId"></span></p>
-                    <p>You will receive an email confirmation shortly.</p>
-                </div>
-                <div class="modal-footer">
-                    <button id="newRequest" class="btn btn-primary">Submit Another Request</button>
-                    <button id="closeSuccess" class="btn btn-secondary">Close</button>
-                </div>
-            </div>
-        </div>
+        <!-- Legacy request modals removed -->
     </div>
 
     <!-- Global Error Banner -->
