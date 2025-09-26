@@ -3355,20 +3355,19 @@ function resetMapView() {
 
 // Update drawing status
 function updateDrawingStatus(message, type = 'ready') {
-    const statusDot = document.querySelector('.status-dot');
-    const statusText = document.querySelector('.status-text');
-    
-    statusText.textContent = message;
-    
-    // Remove all status classes
-    statusDot.classList.remove('drawing', 'error');
-    
-    // Add appropriate class
-    if (type === 'drawing') {
-        statusDot.classList.add('drawing');
-    } else if (type === 'error') {
-        statusDot.classList.add('error');
+    if (window.ToolStatus && typeof window.ToolStatus.update === 'function') {
+        return window.ToolStatus.update(message, type);
     }
+    // Fallback in case helper is unavailable
+    try {
+        const statusDot = document.querySelector('.status-dot');
+        const statusText = document.querySelector('.status-text');
+        if (statusText) statusText.textContent = message;
+        if (!statusDot) return;
+        statusDot.classList.remove('drawing', 'error');
+        if (type === 'drawing') statusDot.classList.add('drawing');
+        else if (type === 'error') statusDot.classList.add('error');
+    } catch(_) {}
 }
 
 // ===================== Crane Tool =====================
