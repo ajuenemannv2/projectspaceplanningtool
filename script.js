@@ -293,29 +293,24 @@ function initializeMap() {
         minZoom: 10
     }).setView(CONFIG.defaultCenter, CONFIG.defaultZoom);
     
-    // Add satellite tiles with multiple options - using Google Satellite for higher zoom
-    const satelliteLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-        attribution: '© Google Satellite',
-        maxZoom: 22
-    });
-    
-    const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
-        maxZoom: 19
-    });
-    
-    // Hybrid tile layer (satellite with labels)
-    const hybridLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
-        attribution: '© Google Hybrid',
-        maxZoom: 22
-    });
-    
-    // Add layer control for switching between tile sets
-    const baseMaps = {
-        "Satellite": satelliteLayer,
-        "Hybrid": hybridLayer,
-        "Street": streetLayer
-    };
+    // Base layers
+    let satelliteLayer, streetLayer, hybridLayer, baseMaps;
+    if (window.ToolMap && typeof window.ToolMap.makeBaseLayers === 'function') {
+        try {
+            const layers = window.ToolMap.makeBaseLayers(map);
+            satelliteLayer = layers.satelliteLayer;
+            streetLayer = layers.streetLayer;
+            hybridLayer = layers.hybridLayer;
+            baseMaps = layers.baseMaps;
+        } catch(_) {}
+    }
+    if (!satelliteLayer || !streetLayer || !baseMaps) {
+        // Fallback to inline definitions
+        satelliteLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { attribution: '© Google Satellite', maxZoom: 22 });
+        streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors', maxZoom: 19 });
+        hybridLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { attribution: '© Google Hybrid', maxZoom: 22 });
+        baseMaps = { "Satellite": satelliteLayer, "Hybrid": hybridLayer, "Street": streetLayer };
+    }
     
     // Add satellite layer by default
     satelliteLayer.addTo(map);
@@ -327,29 +322,30 @@ function initializeMap() {
     addRealTimeMeasurements();
     
     // Auto-switch between satellite/hybrid and street view based on zoom level
-    map.on('zoomend', function() {
-        const currentZoom = map.getZoom();
-        const switchZoom = (window.ToolMap && typeof window.ToolMap.getSwitchZoom === 'function') 
-            ? window.ToolMap.getSwitchZoom() 
-            : (CONFIG?.streetSwitchZoom ?? 15);
-        const currentLayer = (window.ToolMap && typeof window.ToolMap.currentBase === 'function')
-            ? window.ToolMap.currentBase(map, satelliteLayer, hybridLayer)
-            : (map.hasLayer(satelliteLayer) ? 'satellite' : (map.hasLayer(hybridLayer) ? 'hybrid' : 'street'));
-        
-        // If we're on street view and zooming in beyond threshold, switch to satellite
-        if (currentLayer === 'street' && currentZoom > switchZoom) {
-            map.removeLayer(streetLayer);
-            satelliteLayer.addTo(map);
-            updateDrawingStatus('Switched to satellite view for higher zoom');
-        }
-        // If we're on satellite view and zoom out to or below threshold, switch back to street
-        else if ((currentLayer === 'satellite' || currentLayer === 'hybrid') && currentZoom <= switchZoom) {
-            if (map.hasLayer(satelliteLayer)) map.removeLayer(satelliteLayer);
-            if (map.hasLayer(hybridLayer)) map.removeLayer(hybridLayer);
-            streetLayer.addTo(map);
-            updateDrawingStatus('Switched to street view');
-        }
-    });
+    if (window.ToolMap && typeof window.ToolMap.attachAutoSwitch === 'function') {
+        try { window.ToolMap.attachAutoSwitch(map, satelliteLayer, streetLayer, hybridLayer); } catch(_) {}
+    } else {
+        map.on('zoomend', function() {
+            const currentZoom = map.getZoom();
+            const switchZoom = (window.ToolMap && typeof window.ToolMap.getSwitchZoom === 'function') 
+                ? window.ToolMap.getSwitchZoom() 
+                : (CONFIG?.streetSwitchZoom ?? 15);
+            const currentLayer = (window.ToolMap && typeof window.ToolMap.currentBase === 'function')
+                ? window.ToolMap.currentBase(map, satelliteLayer, hybridLayer)
+                : (map.hasLayer(satelliteLayer) ? 'satellite' : (map.hasLayer(hybridLayer) ? 'hybrid' : 'street'));
+            
+            if (currentLayer === 'street' && currentZoom > switchZoom) {
+                map.removeLayer(streetLayer);
+                satelliteLayer.addTo(map);
+                updateDrawingStatus('Switched to satellite view for higher zoom');
+            } else if ((currentLayer === 'satellite' || currentLayer === 'hybrid') && currentZoom <= switchZoom) {
+                if (map.hasLayer(satelliteLayer)) map.removeLayer(satelliteLayer);
+                if (map.hasLayer(hybridLayer)) map.removeLayer(hybridLayer);
+                streetLayer.addTo(map);
+                updateDrawingStatus('Switched to street view');
+            }
+        });
+    }
     
     // Initialize drawing layer
     drawnItems = new L.FeatureGroup();
