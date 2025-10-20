@@ -1206,29 +1206,30 @@ class LogisticsMap {
 
             console.log('🔧 BULLETPROOF APPROACH: Manual coordinate conversion');
 
-            // Step 1: Temporarily hide ALL shape layers to capture clean map
+            // Step 1: Temporarily hide ALL shape layers (recursively) to capture clean map
             const originalShapes = [];
-            
-            // Hide all possible shape layers
-            const layersToHide = [
-                this.mapLayers.savedSpaces,
-                this.mapLayers.measurements,
-                this.mapLayers.drawnItems
-            ];
-            
-            layersToHide.forEach(layerGroup => {
-                if (layerGroup) {
-                    layerGroup.eachLayer(layer => {
-                        if (layer.getElement) {
-                            const element = layer.getElement();
-                            if (element) {
-                                originalShapes.push({ layer, element, originalDisplay: element.style.display });
-                                element.style.display = 'none';
-                            }
+
+            const hideLayerElementsRecursive = (layer) => {
+                if (!layer) return;
+                try {
+                    if (typeof layer.eachLayer === 'function') {
+                        layer.eachLayer(child => hideLayerElementsRecursive(child));
+                    }
+                } catch(_) {}
+                try {
+                    if (typeof layer.getElement === 'function') {
+                        const element = layer.getElement();
+                        if (element) {
+                            originalShapes.push({ element, originalDisplay: element.style.display });
+                            element.style.display = 'none';
                         }
-                    });
-                }
-            });
+                    }
+                } catch(_) {}
+            };
+
+            // Hide all possible shape layers (including nested GeoJSON/markers)
+            [this.mapLayers.savedSpaces, this.mapLayers.measurements, this.mapLayers.drawnItems]
+                .forEach(group => hideLayerElementsRecursive(group));
             
             // Also hide any SVG elements that might be shapes
             const svgElements = mapContainer.querySelectorAll('svg');
@@ -1239,6 +1240,12 @@ class LogisticsMap {
             // Hide watermark markers so we can draw them on TOP later
             const wmElements = mapContainer.querySelectorAll('.watermark-marker');
             wmElements.forEach(el => {
+                originalShapes.push({ element: el, originalDisplay: el.style.display });
+                el.style.display = 'none';
+            });
+            // Hide any default Leaflet marker icons/shadows (blue pins)
+            const pinEls = mapContainer.querySelectorAll('.leaflet-marker-icon, .leaflet-marker-shadow');
+            pinEls.forEach(el => {
                 originalShapes.push({ element: el, originalDisplay: el.style.display });
                 el.style.display = 'none';
             });
