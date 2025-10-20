@@ -714,6 +714,10 @@ class LogisticsMap {
                                         weight: 2,
                                         opacity: 0.8
                                     };
+                                },
+                                // Suppress any Point features (pins/handles) in saved geometry
+                                pointToLayer: function(feature, latlng) {
+                                    return L.circleMarker(latlng, { radius: 0, opacity: 0, fillOpacity: 0 });
                                 }
                             });
                         } else {
@@ -725,6 +729,10 @@ class LogisticsMap {
                                     fillOpacity: fillOpacity,
                                     weight: weight,
                                     opacity: 0.8
+                                },
+                                // Hide any stray Point features in generic shapes as well
+                                pointToLayer: function(feature, latlng) {
+                                    return L.circleMarker(latlng, { radius: 0, opacity: 0, fillOpacity: 0 });
                                 }
                             });
                         }
