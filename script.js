@@ -1,25 +1,16 @@
-// Build crane geometry as a MultiGeometry (pad polygon + sweep polygon + radius line)
-function buildCraneGeometry() {
-    try {
-        const features = [];
-        if (cranePadRect) {
-            const gj = cranePadRect.toGeoJSON();
-            features.push({ type: 'Feature', properties: { part: 'pad' }, geometry: gj.geometry });
-        }
-        if (craneSweepSector) {
-            const gj = craneSweepSector.toGeoJSON();
-            features.push({ type: 'Feature', properties: { part: 'sweep', sweepDeg: Math.round(Math.abs(craneSweepAccumDeg)) }, geometry: gj.geometry });
-        }
-        if (craneRadiusLine) {
-            const gj = craneRadiusLine.toGeoJSON();
-            features.push({ type: 'Feature', properties: { part: 'radius', radiusFt: Math.round(craneRadiusFeet) }, geometry: gj.geometry });
-        }
-        return { type: 'FeatureCollection', features };
-    } catch (e) {
-        console.warn('Failed to build crane geometry', e);
-        return null;
-    }
+// Security functions will be loaded via script tag
+
+// ===== GLOBAL DEBUG LOGGER =====
+if (typeof window.DEBUG_DRAW === 'undefined') window.DEBUG_DRAW = false;
+if (!window.DrawDebug) {
+    window.DrawDebug = function(tag, msg, data){
+        if (!window.DEBUG_DRAW) return;
+        try { console.log(`[DRAW][${tag}] ${msg}`, data || ''); } catch(_) {}
+    };
 }
+
+// Build crane geometry as a MultiGeometry (pad polygon + sweep polygon + radius line)
+// ✅ MIGRATED: buildCraneGeometry moved to src/tool/crane.js
 // Global variables
 let map;
 let drawnItems;
@@ -301,6 +292,9 @@ function initializeMap() {
         renderer: L.canvas({ padding: 1.0 }) // expanded padding (~2x) to further reduce edge clipping
     }).setView(CONFIG.defaultCenter, CONFIG.defaultZoom);
     
+    // Make map globally available for other systems
+    window.map = map;
+    
     // Base layers
     let satelliteLayer, streetLayer, hybridLayer, baseMaps;
     if (window.ToolMap && typeof window.ToolMap.makeBaseLayers === 'function') {
@@ -362,37 +356,16 @@ function initializeMap() {
     window.cranesLayer = new L.FeatureGroup();
     map.addLayer(window.cranesLayer);
     
-    // Initialize drawing controls with custom distance measurements
+    // DISABLED: Old Leaflet.Draw toolbar - replaced with custom Revit-style toolbar
+    // const drawControl = new L.Control.Draw({...});
+    // window.drawControl = drawControl;
+    // map.addControl(drawControl);
+    
+    // Create a minimal draw control for compatibility but don't add it to map
     const drawControl = new L.Control.Draw({
         draw: {
-            polygon: {
-                allowIntersection: false,
-                drawError: {
-                    color: '#e1e100',
-                    message: '<strong>Error:</strong> Shape edges cannot cross!'
-                },
-                shapeOptions: {
-                    color: '#0078d4',
-                    fillColor: '#0078d4',
-                    fillOpacity: 0.3,
-                    weight: 2
-                },
-                // Disable default measurements - we'll handle them ourselves
-                showArea: false,
-                showLength: false
-            },
-            rectangle: {
-                shapeOptions: {
-                    color: '#0078d4',
-                    fillColor: '#0078d4',
-                    fillOpacity: 0.3,
-                    weight: 2
-                },
-                // Disable default measurements - we'll handle them ourselves
-                showArea: false,
-                showLength: false
-            },
-            // Disable built-in polyline; we'll implement a custom Fence tool
+            polygon: false,
+            rectangle: false,
             polyline: false,
             circle: false,
             circlemarker: false,
@@ -400,34 +373,30 @@ function initializeMap() {
         },
         edit: {
             featureGroup: drawnItems,
-            remove: true
+            remove: false
         }
     });
     
-    // Store draw control globally for access
+    // Store draw control globally for compatibility but don't add to map
     window.drawControl = drawControl;
+    // map.addControl(drawControl); // DISABLED - using custom toolbar instead
     
-    map.addControl(drawControl);
-    
-    // Add custom undo button to the drawing toolbar
-    addUndoButtonToToolbar();
-
-    // Add a custom Fence button next to polygon/rectangle
-    addFenceButtonToToolbar();
-    // Add Crane tool button
-    addCraneButtonToToolbar();
+    // DISABLED: Old toolbar buttons - replaced with custom Revit-style toolbar
+    // addUndoButtonToToolbar();
+    // addFenceButtonToToolbar();
+    // addCraneButtonToToolbar();
     // Try injecting caution pattern shortly after map init
     setTimeout(() => { try { injectCautionPattern(); } catch(_) {} }, 250);
     // Try injecting caution pattern shortly after map init
     setTimeout(injectCautionPattern, 250);
     
     // Drawing event listeners
-    map.on('draw:created', onShapeCreated);
-    map.on('draw:edited', onShapeEdited);
-    map.on('draw:deleted', onShapeDeleted);
-    map.on('draw:drawstart', onDrawStart);
-    map.on('draw:drawstop', onDrawStop);
-    map.on('draw:drawing', onDrawing); // Real-time drawing events
+    map.on('draw:created', function(e){ DrawDebug('LIFECYCLE','draw:created', e); onShapeCreated(e); });
+    map.on('draw:edited', function(e){ DrawDebug('LIFECYCLE','draw:edited', e); onShapeEdited(e); });
+    map.on('draw:deleted', function(e){ DrawDebug('LIFECYCLE','draw:deleted', e); onShapeDeleted(e); });
+    map.on('draw:drawstart', function(e){ DrawDebug('LIFECYCLE','draw:drawstart', e); onDrawStart(e); });
+    map.on('draw:drawstop', function(e){ DrawDebug('LIFECYCLE','draw:drawstop', e); onDrawStop(e); });
+    map.on('draw:drawing', function(e){ DrawDebug('LIFECYCLE','draw:drawing', e); onDrawing(e); }); // Real-time drawing events
 }
 
 // Loading Animation Functions
@@ -928,6 +897,10 @@ async function loadProjectPhases(projectId) {
         
         if (error) {
             console.error('❌ Error loading phases:', error);
+            logSecurityEvent('DATABASE_ERROR', 'Failed to load project phases', { 
+                error: error.message, 
+                projectId 
+            });
             return [];
         }
         
@@ -1433,8 +1406,15 @@ function onShapeCreated(e) {
     // Set up rectangle as rotatable polygon if drawn via rectangle tool
     if (e.layerType === 'rectangle' || layer instanceof L.Rectangle) {
         try {
+            // If coming from v2 custom drawing, the layer is already a polygon with labels
+            // Avoid recreating and instead reuse the provided layer
+            let poly;
+            if (e._fromCustomDrawing) {
+                poly = layer; // Already a polygon
+                currentShape = poly;
+            } else {
             const rectLatLngs = layer.getLatLngs()[0]; // rectangle returns 1 ring
-            const poly = L.polygon(rectLatLngs, {
+                poly = L.polygon(rectLatLngs, {
                 color: '#0078d4',
                 weight: 3,
                 fill: true,
@@ -1443,6 +1423,7 @@ function onShapeCreated(e) {
             try { drawnItems.removeLayer(layer); } catch(_) {}
             drawnItems.addLayer(poly);
             currentShape = poly;
+            }
 
             // Bind similar popup
             const rectArea = L.GeometryUtil.geodesicArea(poly.getLatLngs()[0]);
@@ -1454,26 +1435,75 @@ function onShapeCreated(e) {
                 Double-click to edit | Use Undo to remove
             `);
 
-            // Distance labels
+            // ✅ FIX: Only add legacy labels if needed (v2 shapes bring their own and have _recomputeLabels)
+            if (!poly._hasMeasurements && !e._fromCustomDrawing) {
             addDistanceLabels(poly);
+            }
 
             // Enable rotation via draggable handle
-            enablePolygonRotation(poly);
+            if (window.PolygonTool && window.PolygonTool.enablePolygonRotation) {
+                window.PolygonTool.enablePolygonRotation(poly);
+            } else if (window.enablePolygonRotation) {
+                window.enablePolygonRotation(poly);
+            }
 
             // Replace references in undo stack
             undoStack.push({ action: 'draw', shape: poly });
             updateUndoButton();
 
             // Click/dblclick behavior
-            poly.on('click', function(){ currentShape = poly; updateSubmitButton(); });
+    poly.on('click', function(){ 
+        currentShape = poly; 
+        updateSubmitButton(); 
+        // Clear any map errors since we now have a shape
+        clearMapError();
+        // Update state tracking
+        updateToolState('edit', 'editing', poly, false);
+    });
+    
+    // Setup custom editing for this shape (with delay to ensure shape is fully initialized)
+    setTimeout(() => {
+        if (window.CustomEditing && typeof window.CustomEditing.setupShapeClickHandler === 'function') {
+            try {
+                window.CustomEditing.setupShapeClickHandler(poly);
+            } catch (error) {
+                console.warn('Error setting up custom editing for shape:', error);
+            }
+        }
+    }, 100);
+            // Single-click enters edit/scale mode; double-click rotates
+            poly.on('click', function(){
+                try { 
+                    if (window.RectangleTool && window.RectangleTool.enableRectScaleMode) {
+                        window.RectangleTool.enableRectScaleMode(poly);
+                    } else if (window.enableRectScaleMode) {
+                        window.enableRectScaleMode(poly);
+                    }
+                } catch(_) {}
+            });
             poly.on('dblclick', function(){
-                // Use custom rectangle scale mode
-                try { disableRectScaleMode(poly); } catch(_) {}
-                enableRectScaleMode(poly);
+                try { 
+                    if (window.RectangleTool && window.RectangleTool.disableRectScaleMode) {
+                        window.RectangleTool.disableRectScaleMode(poly);
+                    } else if (window.disableRectScaleMode) {
+                        window.disableRectScaleMode(poly);
+                    }
+                } catch(_) {}
+                if (window.PolygonTool && window.PolygonTool.enablePolygonRotation) {
+                    window.PolygonTool.enablePolygonRotation(poly);
+                } else if (window.enablePolygonRotation) {
+                    window.enablePolygonRotation(poly);
+                }
             });
 
-            // Live updates while vertex editing
-            poly.on('edit', function(){ try { addDistanceLabels(poly); } catch(_) {} });
+            // Live updates while vertex editing / rotation / scaling
+            // For v2 shapes, use _recomputeLabels; for legacy, use addDistanceLabels
+            poly.on('edit', function(){
+                try {
+                    if (poly._recomputeLabels) { poly._recomputeLabels(); }
+                    else if (!poly._hasMeasurements) { addDistanceLabels(poly); }
+                } catch(_) {}
+            });
 
             updateDrawingStatus(`Shape created - Area: ${rectAreaSqFt} sq ft`);
             updateSubmitButton();
@@ -1607,20 +1637,26 @@ function onShapeCreated(e) {
         }
     });
     
+    // 🗑️ DISABLED: Legacy measurement updates - v2 system handles all measurements
     // Dynamic measurement updates while editing polygons/rectangles
-    layer.on('edit', function() {
-        try {
-            if (layer instanceof L.Rectangle) {
-                updateRectangleMeasurements(layer);
-            } else if (layer instanceof L.Polygon) {
-                addDistanceLabels(layer);
-            }
-        } catch(_) {}
-    });
+    // if (!layer._hasMeasurements) {
+    //     layer.on('edit', function() {
+    //         try {
+    //             if (layer instanceof L.Rectangle) {
+    //                 updateRectangleMeasurements(layer);
+    //             } else if (layer instanceof L.Polygon) {
+    //                 addDistanceLabels(layer);
+    //             }
+    //         } catch(_) {}
+    //     });
+    // }
     
-    // Only add distance measurements if we don't already have them from drawing
-    if (drawingMarkers.length === 0) {
+    // ✅ FIX: Only add distance measurements if we don't already have them
+    // Check if v2 drawing system already added measurements
+    if (drawingMarkers.length === 0 && !layer._hasMeasurements && !e._fromCustomDrawing) {
         addDistanceLabels(layer);
+    } else {
+        console.log('✅ Skipping duplicate measurements - v2 system already added them');
     }
     
     // Add to undo stack for easy removal
@@ -1641,8 +1677,8 @@ function onShapeEdited(e) {
     layers.eachLayer(function(layer) {
         // Update per type to avoid applying polygon logic to polylines
         if (layer instanceof L.Rectangle) {
-            // Rectangle: update its custom measurements and popup area
-            updateRectangleMeasurements(layer);
+            // 🗑️ DISABLED: Legacy rectangle measurements - v2 system handles this
+            // updateRectangleMeasurements(layer);
             try {
         const area = L.GeometryUtil.geodesicArea(layer.getLatLngs()[0]);
         const areaSqFt = Math.round(area * 10.764);
@@ -1667,7 +1703,10 @@ function onShapeEdited(e) {
                     `);
                 }
             } catch(_) {}
+            // ✅ FIX: Only update labels for legacy shapes (v2 shapes handle their own updates)
+            if (!layer._hasMeasurements) {
             addDistanceLabels(layer);
+            }
         } else if (layer instanceof L.Polyline) {
             // Fence/polyline: update segment labels and total length
             addFenceDistanceLabels(layer);
@@ -1752,25 +1791,36 @@ let finishingOpenFence = false; // Track if we finished fence open at last point
 let firstFinishMarker = null; // Clickable marker on first vertex (close)
 let lastFinishMarker = null;  // Clickable marker on last vertex (finish open)
 let isFenceModeActive = false; // Custom fence tool active
+let currentFenceSession = null; // Current fence drawing session
 let fenceRealtimeMarkers = []; // Realtime labels during fence drawing
 let fenceMouseDistanceMarker = null; // Realtime label for last->mouse segment
 let isShiftDown = false; // Track Shift modifier for snapping
 
-// Real-time measurement system
+// Real-time measurement system (LEGACY - mostly replaced by session classes)
 function addRealTimeMeasurements() {
-    // Listen for drawing events
-    map.on('draw:drawstart', onDrawStart);
-    map.on('draw:drawstop', onDrawStop);
-    // Removed onDrawVertex listener - using only map clicks now
+    // ✅ REMOVED: draw:drawstart and draw:drawstop - already attached in initMap()
+    // Custom drawing tools (Fence, Rectangle, Polygon) manage their own events via session classes
     
-    // Listen for mouse movement during drawing
-    map.on('mousemove', onMouseMove);
+    // Legacy event listeners for backward compatibility only
+    // 🗑️ DISABLED: Old generic drawing listeners (v2/FenceDrawSession manage their own)
+    // map.on('mousemove', onMouseMove);
+    // map.on('click', onMapClick);
+document.addEventListener('keydown', onKeyDown);
+// Global Delete key to remove selected saved space (not during drawing)
+document.addEventListener('keydown', async function(e){
+    try {
+        if (e.key === 'Delete' && !isDrawing) {
+            // Prefer saved space selection
+            const selected = window.currentShape || currentShape;
+            const spaceId = selected?._spaceId || selected?.options?._spaceId || null;
+            if (spaceId) {
+                e.preventDefault();
+                await deleteSavedSpace(spaceId);
+            }
+        }
+    } catch(_) {}
+});
     
-    // Listen for map clicks during drawing to capture vertices
-    map.on('click', onMapClick);
-    
-    // Listen for Enter key to finish drawing (especially for fences)
-    document.addEventListener('keydown', onKeyDown);
     // Track modifier keys for snapping
     document.addEventListener('keydown', function(e){ if (e.key === 'Shift') { isShiftDown = true; } });
     document.addEventListener('keyup', function(e){ if (e.key === 'Shift') { isShiftDown = false; } });
@@ -1842,6 +1892,11 @@ function onDrawStart(e) {
     isDrawing = true;
     currentDrawingLayer = e.layer;
     
+    // Update state tracking based on layer type
+    let toolType = 'polygon';
+    if (e.layerType === 'rectangle') toolType = 'rectangle';
+    updateToolState(toolType, 'drawing', null, true);
+    
     // Clear any existing drawing markers
     drawingMarkers.forEach(marker => map.removeLayer(marker));
     drawingMarkers = [];
@@ -1877,7 +1932,11 @@ function onDrawStart(e) {
     } else if (e.layerType === 'rectangle') {
         // For rectangles, set up custom real-time tracking
         console.log('🔧 Rectangle drawing started - setting up custom tracking');
-        setupCustomRectangleTracking();
+        if (window.RectangleTool && window.RectangleTool.setupCustomRectangleTracking) {
+            window.RectangleTool.setupCustomRectangleTracking();
+        } else if (window.setupCustomRectangleTracking) {
+            window.setupCustomRectangleTracking();
+        }
     } else if (e.layerType === 'polyline') {
         // For fences (polylines), use same logic as polygons but with yellow color
         console.log('🔧 Fence drawing started - using polygon logic with yellow color');
@@ -1914,125 +1973,14 @@ function onDrawStart(e) {
 }
 
 // Custom rectangle tracking using a different approach
-function setupCustomRectangleTracking() {
-    console.log('🔧 Setting up custom rectangle tracking with layer monitoring');
-    
-    // Clear any existing real-time measurements
-    if (window.realtimeRectangleMeasurements) {
-        window.realtimeRectangleMeasurements.forEach(marker => map.removeLayer(marker));
-    }
-    window.realtimeRectangleMeasurements = [];
-    
-    // Monitor the map for new rectangle layers
-    const originalAddLayer = map.addLayer;
-    map.addLayer = function(layer) {
-        const result = originalAddLayer.call(this, layer);
-        
-        // Check if this is a rectangle being added during drawing
-        if (layer instanceof L.Rectangle && isDrawing) {
-            console.log('🔍 Rectangle layer added during drawing:', layer);
-            
-            // Set up real-time measurements for this rectangle
-            setupRectangleRealtimeMeasurements(layer);
-        }
-        
-        return result;
-    };
-    
-    console.log('✅ Custom rectangle tracking set up with layer monitoring');
-}
+// ✅ MIGRATED: setupCustomRectangleTracking moved to src/tool/rectangle.js
 
-// Set up real-time measurements for a specific rectangle
-function setupRectangleRealtimeMeasurements(rectangleLayer) {
-    console.log('🔧 Setting up real-time measurements for rectangle:', rectangleLayer);
-    
-    // Clear existing measurements
-    if (window.realtimeRectangleMeasurements) {
-        window.realtimeRectangleMeasurements.forEach(marker => map.removeLayer(marker));
-    }
-    window.realtimeRectangleMeasurements = [];
-    
-    // Update measurements immediately
-    updateRectangleMeasurementsRealTime(rectangleLayer);
-    
-    // Set up continuous monitoring
-    const updateMeasurements = () => {
-        if (isDrawing && rectangleLayer && rectangleLayer._map) {
-            updateRectangleMeasurementsRealTime(rectangleLayer);
-            setTimeout(updateMeasurements, 50); // Update every 50ms
-        }
-    };
-    
-    updateMeasurements();
-    
-    console.log('✅ Real-time measurements set up for rectangle');
-}
+// 🗑️ DELETED: Legacy rectangle measurements - replaced by v2 custom drawing system
 
 // Old fence measurement functions removed - now using standard distanceLabels system
 
 // Add distance labels for fence (similar to addDistanceLabels but with yellow styling)
-function addFenceDistanceLabels(layer) {
-    const latLngs = layer.getLatLngs(); // For polylines, getLatLngs() returns the array directly
-    
-    // Remove any existing distance labels
-    if (layer.distanceLabels) {
-        layer.distanceLabels.forEach(label => {
-            map.removeLayer(label);
-        });
-    }
-    
-    layer.distanceLabels = [];
-    
-    // Add distance labels for each line segment (point-to-point)
-    for (let i = 0; i < latLngs.length - 1; i++) { // -1 because we don't close the loop for fences
-        const currentPoint = latLngs[i];
-        const nextPoint = latLngs[i + 1];
-        
-        // Calculate the actual distance between these two points
-        const distance = calculateDistanceInFeet(currentPoint, nextPoint);
-        
-        // Position label at the midpoint of the line segment
-        const midPoint = L.latLng(
-            (currentPoint.lat + nextPoint.lat) / 2,
-            (currentPoint.lng + nextPoint.lng) / 2
-        );
-        
-        // Offset the measurement position to prevent overlapping
-        const offsetDistance = i * 0.00001; // Small offset for each measurement
-        const offsetLat = midPoint.lat + offsetDistance;
-        const offsetLng = midPoint.lng + offsetDistance;
-        const offsetPoint = L.latLng(offsetLat, offsetLng);
-        
-        // Create a permanent label showing the segment length (blue styling)
-        const label = L.divIcon({
-            className: 'fence-distance-label',
-            html: `<div style="
-                background: rgba(255, 255, 255, 0.98);
-                border: 2px solid #0078d4;
-                border-radius: 8px;
-                padding: 8px 12px;
-                font-size: 13px;
-                font-weight: bold;
-                color: #0078d4;
-                white-space: nowrap;
-                box-shadow: 0 4px 8px rgba(0,0,0,0.4);
-                pointer-events: none;
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                text-align: center;
-                min-width: 80px;
-                max-width: 120px;
-                line-height: 1.2;
-            ">${distance.toFixed(1)} ft</div>`,
-            iconSize: [0, 0],
-            iconAnchor: [0, 0]
-        });
-        
-        const marker = L.marker(offsetPoint, { icon: label }).addTo(map);
-        layer.distanceLabels.push(marker);
-    }
-    
-    console.log('Fence distance labels added');
-}
+// ✅ MIGRATED: addFenceDistanceLabels moved to src/tool/fence.js
 
 // Old setupFenceMeasurementsForCreated function removed - now using standard distanceLabels system
 
@@ -2042,226 +1990,18 @@ function onDrawing(e) {
     
     console.log('🔍 onDrawing called:', e.layerType, 'layer exists:', !!e.layer);
     
-    // Only handle rectangles for real-time measurements
-    if (e.layerType === 'rectangle' && e.layer) {
-        console.log('🔍 Updating rectangle measurements in real-time');
-        updateRectangleMeasurementsRealTime(e.layer);
-    }
+    // 🗑️ DISABLED: Legacy real-time rectangle measurements - v2 system handles this
+    // if (e.layerType === 'rectangle' && e.layer) {
+    //     console.log('🔍 Updating rectangle measurements in real-time');
+    //     updateRectangleMeasurementsRealTime(e.layer);
+    // }
 }
 
-// Update rectangle measurements in real-time during drawing
-function updateRectangleMeasurementsRealTime(rectangleLayer) {
-    if (!rectangleLayer || !rectangleLayer.getBounds) return;
-    
-    // Clear existing real-time measurements
-    if (window.realtimeRectangleMeasurements) {
-        window.realtimeRectangleMeasurements.forEach(marker => map.removeLayer(marker));
-    }
-    window.realtimeRectangleMeasurements = [];
-    
-    try {
-        const bounds = rectangleLayer.getBounds();
-        const northEast = bounds.getNorthEast();
-        const southWest = bounds.getSouthWest();
-        
-        // Calculate dimensions using proper distance calculation
-        const widthFeet = calculateDistanceInFeet(
-            { lat: northEast.lat, lng: southWest.lng },
-            { lat: northEast.lat, lng: northEast.lng }
-        );
-        
-        const heightFeet = calculateDistanceInFeet(
-            { lat: southWest.lat, lng: northEast.lng },
-            { lat: northEast.lat, lng: northEast.lng }
-        );
-        
-        // Calculate area in square feet
-        const area = widthFeet * heightFeet;
-        
-        // Create measurement markers for each side
-        const centerLat = (northEast.lat + southWest.lat) / 2;
-        const centerLng = (northEast.lng + southWest.lng) / 2;
-        
-        // Top side measurement
-        const topLat = northEast.lat;
-        const topLng = centerLng;
-        addRealtimeRectangleMeasurement(topLat, topLng, `${widthFeet.toFixed(1)} ft`);
-        
-        // Bottom side measurement
-        const bottomLat = southWest.lat;
-        const bottomLng = centerLng;
-        addRealtimeRectangleMeasurement(bottomLat, bottomLng, `${widthFeet.toFixed(1)} ft`);
-        
-        // Left side measurement
-        const leftLat = centerLat;
-        const leftLng = southWest.lng;
-        addRealtimeRectangleMeasurement(leftLat, leftLng, `${heightFeet.toFixed(1)} ft`);
-        
-        // Right side measurement
-        const rightLat = centerLat;
-        const rightLng = northEast.lng;
-        addRealtimeRectangleMeasurement(rightLat, rightLng, `${heightFeet.toFixed(1)} ft`);
-        
-        // Area measurement in center
-        addRealtimeRectangleMeasurement(centerLat, centerLng, `${area.toFixed(0)} sq ft`);
-        
-        console.log('Real-time rectangle measurements updated:', { widthFeet, heightFeet, area });
-    } catch (error) {
-        console.log('Error updating real-time rectangle measurements:', error);
-    }
-}
+// 🗑️ DELETED: Legacy rectangle real-time measurement functions
+// Replaced by v2 custom drawing system
 
-// Add a real-time measurement marker for rectangle
-function addRealtimeRectangleMeasurement(lat, lng, text) {
-    console.log('🔍 Creating measurement marker at:', lat, lng, 'text:', text);
-    
-    const marker = L.marker([lat, lng], {
-        icon: L.divIcon({
-            className: 'realtime-rectangle-measurement-marker',
-            html: `<div style="
-                background: rgba(255, 255, 255, 0.95);
-                border: 2px solid #ff6b35;
-                border-radius: 6px;
-                padding: 4px 8px;
-                font-size: 11px;
-                font-weight: bold;
-                color: #ff6b35;
-                white-space: nowrap;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-                pointer-events: none;
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                text-align: center;
-                min-width: 50px;
-            ">${text}</div>`,
-            iconSize: [0, 0],
-            iconAnchor: [0, 0]
-        })
-    }).addTo(map);
-    
-    if (!window.realtimeRectangleMeasurements) {
-        window.realtimeRectangleMeasurements = [];
-    }
-    window.realtimeRectangleMeasurements.push(marker);
-    
-    console.log('✅ Measurement marker created and added to map');
-}
-
-// Set up real-time measurements for rectangle drawing
-function setupRectangleMeasurements(rectangleLayer) {
-    console.log('Setting up rectangle measurements for layer:', rectangleLayer);
-    
-    // Clear any existing rectangle measurements
-    if (window.rectangleMeasurements) {
-        window.rectangleMeasurements.forEach(marker => map.removeLayer(marker));
-    }
-    window.rectangleMeasurements = [];
-    
-    // Add event listener to the rectangle layer for real-time updates
-    rectangleLayer.on('edit', function() {
-        updateRectangleMeasurements(rectangleLayer);
-    });
-    
-    // Also listen for the layer being modified during drawing
-    rectangleLayer.on('editstart', function() {
-        updateRectangleMeasurements(rectangleLayer);
-    });
-    
-    // Initial measurement update
-    updateRectangleMeasurements(rectangleLayer);
-}
-
-// Update rectangle measurements in real-time
-function updateRectangleMeasurements(rectangleLayer) {
-    if (!rectangleLayer || !rectangleLayer.getBounds) return;
-    
-    // Clear existing measurements
-    if (window.rectangleMeasurements) {
-        window.rectangleMeasurements.forEach(marker => map.removeLayer(marker));
-    }
-    window.rectangleMeasurements = [];
-    
-    try {
-        const bounds = rectangleLayer.getBounds();
-        const northEast = bounds.getNorthEast();
-        const southWest = bounds.getSouthWest();
-        
-        // Calculate dimensions using proper distance calculation
-        const widthFeet = calculateDistanceInFeet(
-            { lat: northEast.lat, lng: southWest.lng },
-            { lat: northEast.lat, lng: northEast.lng }
-        );
-        
-        const heightFeet = calculateDistanceInFeet(
-            { lat: southWest.lat, lng: northEast.lng },
-            { lat: northEast.lat, lng: northEast.lng }
-        );
-        
-        // Calculate area in square feet
-        const area = widthFeet * heightFeet;
-        
-        // Create measurement markers for each side
-        const centerLat = (northEast.lat + southWest.lat) / 2;
-        const centerLng = (northEast.lng + southWest.lng) / 2;
-        
-        // Top side measurement
-        const topLat = northEast.lat;
-        const topLng = centerLng;
-        addRectangleMeasurement(topLat, topLng, `${widthFeet.toFixed(1)} ft`);
-        
-        // Bottom side measurement
-        const bottomLat = southWest.lat;
-        const bottomLng = centerLng;
-        addRectangleMeasurement(bottomLat, bottomLng, `${widthFeet.toFixed(1)} ft`);
-        
-        // Left side measurement
-        const leftLat = centerLat;
-        const leftLng = southWest.lng;
-        addRectangleMeasurement(leftLat, leftLng, `${heightFeet.toFixed(1)} ft`);
-        
-        // Right side measurement
-        const rightLat = centerLat;
-        const rightLng = northEast.lng;
-        addRectangleMeasurement(rightLat, rightLng, `${heightFeet.toFixed(1)} ft`);
-        
-        // Area measurement in center
-        addRectangleMeasurement(centerLat, centerLng, `${area.toFixed(0)} sq ft`);
-        
-        console.log('Rectangle measurements updated:', { widthFeet, heightFeet, area });
-    } catch (error) {
-        console.log('Error updating rectangle measurements:', error);
-    }
-}
-
-// Add a measurement marker for rectangle
-function addRectangleMeasurement(lat, lng, text) {
-    const marker = L.marker([lat, lng], {
-        icon: L.divIcon({
-            className: 'rectangle-measurement-marker',
-            html: `<div style="
-                background: rgba(255, 255, 255, 0.95);
-                border: 2px solid #0078d4;
-                border-radius: 6px;
-                padding: 4px 8px;
-                font-size: 11px;
-                font-weight: bold;
-                color: #0078d4;
-                white-space: nowrap;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-                pointer-events: none;
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                text-align: center;
-                min-width: 50px;
-            ">${text}</div>`,
-            iconSize: [0, 0],
-            iconAnchor: [0, 0]
-        })
-    }).addTo(map);
-    
-    if (!window.rectangleMeasurements) {
-        window.rectangleMeasurements = [];
-    }
-    window.rectangleMeasurements.push(marker);
-}
+// 🗑️ DELETED: All legacy rectangle measurement functions
+// Replaced by v2 custom drawing system (src/tool/drawing/custom-drawing-v2.js)
 
 // Handle vertex addition during drawing
 function onDrawVertex(e) {
@@ -2709,6 +2449,7 @@ function onDrawStop(e) {
     console.log('onDrawStop called:', e);
     updateDrawingStatus('Drawing completed');
     setDrawingModeActive(false);
+    updateToolState('none', 'idle', null, false);
     
     // Use the comprehensive cleanup function
     cleanupDrawingState();
@@ -2800,61 +2541,19 @@ function calculateDistanceInFeet(latLng1, latLng2) {
     return distanceInMeters * 3.28084;
 }
 
+// 🗑️ DELETED: Legacy addDistanceLabels() function
+// Replaced by v2 custom drawing system (src/tool/drawing/custom-drawing-v2.js)
+// This stub prevents errors from legacy code that might still reference it
 function addDistanceLabels(layer) {
-    const latLngs = layer.getLatLngs()[0]; // Get the coordinates of the shape
-    
-    // Remove any existing distance labels
-    if (layer.distanceLabels) {
-        layer.distanceLabels.forEach(label => {
-            map.removeLayer(label);
-        });
-    }
-    
-    layer.distanceLabels = [];
-    
-    // Add distance labels for each line segment (point-to-point)
-    for (let i = 0; i < latLngs.length; i++) {
-        const currentPoint = latLngs[i];
-        const nextPoint = latLngs[(i + 1) % latLngs.length]; // Wrap around to first point
-        
-        // Calculate the actual distance between these two points
-        const distance = calculateDistanceInFeet(currentPoint, nextPoint);
-        
-        // Position label at the midpoint of the line segment
-        const midPoint = L.latLng(
-            (currentPoint.lat + nextPoint.lat) / 2,
-            (currentPoint.lng + nextPoint.lng) / 2
-        );
-        
-        // Create a permanent label showing the segment length
-        const label = L.divIcon({
-            className: 'distance-label',
-            html: `<div style="
-                background: rgba(255, 255, 255, 0.95);
-                border: 2px solid #0078d4;
-                border-radius: 6px;
-                padding: 6px 10px;
-                font-size: 12px;
-                font-weight: bold;
-                color: #0078d4;
-                white-space: nowrap;
-                box-shadow: 0 3px 6px rgba(0,0,0,0.3);
-                pointer-events: none;
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                text-align: center;
-                min-width: 60px;
-            ">${distance.toFixed(2)} ft</div>`,
-            iconSize: [0, 0],
-            iconAnchor: [0, 0]
-        });
-        
-        const marker = L.marker(midPoint, { icon: label }).addTo(map);
-        layer.distanceLabels.push(marker);
-    }
+    console.log('⚠️ Legacy addDistanceLabels() called - v2 system handles measurements now');
+    return; // Do nothing - v2 system creates all measurements
 }
 
 // Initialize event listeners
 function initializeEventListeners() {
+    // ==== PHASE A DEBUG LOGGER ====
+    // DrawDebug is now defined globally at the top of the file
+
     // Form validation
     const formInputs = document.querySelectorAll('input, select, textarea');
     formInputs.forEach(input => {
@@ -2937,10 +2636,13 @@ function initializeEventListeners() {
         }
     });
     
-    // Company selection event listener for watermark updates
+    // Company selection should not clear or require re-drawing a shape.
+    // Update watermark if a shape exists, and re-validate save button.
     document.getElementById('companyName').addEventListener('change', function() {
         console.log('🏢 Company selection changed:', this.value);
-        updateCurrentShapeWatermark();
+        try { updateCurrentShapeWatermark(); } catch(_) {}
+        try { updateSubmitButton(); } catch(_) {}
+        try { clearMapError(); } catch(_) {}
     });
     
     // Phase selection event listeners (for filtering saved spaces)
@@ -2948,6 +2650,12 @@ function initializeEventListeners() {
     document.addEventListener('change', function(e) {
         if (e.target.name === 'projectPhases') {
             console.log('🔄 Phase selection changed, updating space display');
+            // Re-validate form when phases change
+            updateSubmitButton();
+            // Clear phase error when user makes a selection
+            if (e.target.checked) {
+                clearPhaseError();
+            }
             // Debounce the phase change to prevent rapid API calls
             clearTimeout(phaseChangeTimeout);
             phaseChangeTimeout = setTimeout(() => {
@@ -2968,7 +2676,16 @@ function initializeEventListeners() {
     // Undo button is now integrated into the Leaflet toolbar
 }
 
-// Form validation
+// Form validation with enhanced UX feedback
+function hasDrawableSelection() {
+    const group = (typeof window !== 'undefined' && window.currentCraneGroup) || currentCraneGroup;
+    // Accept any existing shape OR a crane feature group that has layers, regardless of transient stage flags
+    if (currentShape) return true;
+    if (group && typeof group.getLayers === 'function' && group.getLayers().length > 0) return true;
+    if (drawnItems && drawnItems.getLayers().length > 0) return true;
+    return false;
+}
+
 function validateForm() {
     const requiredFields = [
         'projectSelect',
@@ -2976,41 +2693,235 @@ function validateForm() {
         'companyName'
     ];
     
-    // Phase validation removed from basic form validation
-    // Will be checked only when submitting
-    
     let isValid = true;
+    const errors = [];
     
-    // Check required fields
+    // Clear previous error messages
+    clearFieldErrors();
+    
+    // Check required fields with enhanced validation
     requiredFields.forEach(fieldId => {
         const field = document.getElementById(fieldId);
-        if (!field.value.trim()) {
+        const value = field.value.trim();
+        
+        if (!value) {
             isValid = false;
-            field.classList.add('invalid');
+            showFieldError(fieldId, `${getFieldDisplayName(fieldId)} is required`);
         } else {
-            field.classList.remove('invalid');
+            clearFieldError(fieldId);
+            
+            // Additional validation for specific fields
+            if (fieldId === 'companyName' && !isValidTrade(value)) {
+                isValid = false;
+                showFieldError(fieldId, 'Company name must be 1-100 characters');
+            }
         }
     });
     
-    // Email and date validation removed - fields no longer exist
+    // Validate space name if provided
+    const spaceNameField = document.getElementById('spaceName');
+    if (spaceNameField && spaceNameField.value.trim()) {
+        const spaceName = spaceNameField.value.trim();
+        if (!isValidSpaceName(spaceName)) {
+            isValid = false;
+            showFieldError('spaceName', 'Space name must be 1-50 characters');
+        } else {
+            clearFieldError('spaceName');
+        }
+    }
     
-    // Check if there is a drawable selection to save: currentShape OR current crane group
-    const hasDrawable = !!currentShape || (!!currentCraneGroup && isCraneModeActive === false && craneStage === 'idle');
-    if (!hasDrawable) { isValid = false; }
+    // Validate description if provided
+    const descriptionField = document.getElementById('description');
+    if (descriptionField && descriptionField.value.trim()) {
+        const description = descriptionField.value.trim();
+        if (description.length > 500) {
+            isValid = false;
+            showFieldError('description', 'Description too long (max 500 characters)');
+        } else {
+            clearFieldError('description');
+        }
+    }
+    
+    // Check phase selection
+    const selectedPhases = getSelectedPhases();
+    if (selectedPhases.length === 0) {
+        isValid = false;
+        showPhaseError('Please select at least one project phase');
+    } else {
+        clearPhaseError();
+    }
+    
+    // Check if there is a drawable selection to save (shape or crane group). Do not require specific crane state.
+    const hasDrawable = hasDrawableSelection();
+    
+    if (!hasDrawable) { 
+        isValid = false; 
+        showMapError('Please draw a shape on the map');
+    } else {
+        clearMapError();
+    }
+    
+    // Log validation errors for security monitoring
+    if (!isValid && errors.length > 0) {
+        logSecurityEvent('FORM_VALIDATION_FAILED', 'Form validation failed', { errors });
+    }
     
     updateSubmitButton(isValid);
     return isValid;
+}
+
+// Helper functions for field error management
+function getFieldDisplayName(fieldId) {
+    const names = {
+        'projectSelect': 'Project',
+        'spaceCategory': 'Space Category',
+        'companyName': 'Company Name',
+        'spaceName': 'Space Name',
+        'description': 'Description'
+    };
+    return names[fieldId] || fieldId;
+}
+
+function showFieldError(fieldId, message) {
+    const field = document.getElementById(fieldId);
+    if (!field) return;
+    
+    // Add visual error styling
+    field.classList.add('invalid');
+    
+    // Create or update error message
+    let errorElement = document.getElementById(`${fieldId}-error`);
+    if (!errorElement) {
+        errorElement = document.createElement('div');
+        errorElement.id = `${fieldId}-error`;
+        errorElement.className = 'field-error';
+        errorElement.style.cssText = 'color: #dc2626; font-size: 0.875rem; margin-top: 0.25rem;';
+        field.parentNode.insertBefore(errorElement, field.nextSibling);
+    }
+    errorElement.textContent = message;
+}
+
+function clearFieldError(fieldId) {
+    const field = document.getElementById(fieldId);
+    if (field) {
+        field.classList.remove('invalid');
+    }
+    
+    const errorElement = document.getElementById(`${fieldId}-error`);
+    if (errorElement) {
+        errorElement.remove();
+    }
+}
+
+function clearFieldErrors() {
+    const errorElements = document.querySelectorAll('.field-error');
+    errorElements.forEach(el => el.remove());
+    
+    const invalidFields = document.querySelectorAll('.invalid');
+    invalidFields.forEach(field => field.classList.remove('invalid'));
+}
+
+function showPhaseError(message) {
+    const phaseContainer = document.getElementById('projectPhases');
+    if (!phaseContainer) return;
+    
+    let errorElement = document.getElementById('phase-error');
+    if (!errorElement) {
+        errorElement = document.createElement('div');
+        errorElement.id = 'phase-error';
+        errorElement.className = 'phase-error';
+        errorElement.style.cssText = 'color: #dc2626; font-size: 0.875rem; margin-top: 0.5rem; font-weight: 500;';
+        phaseContainer.appendChild(errorElement);
+    }
+    errorElement.textContent = message;
+}
+
+function clearPhaseError() {
+    const errorElement = document.getElementById('phase-error');
+    if (errorElement) {
+        errorElement.remove();
+    }
+}
+
+function showMapError(message) {
+    const mapContainer = document.getElementById('map');
+    if (!mapContainer) return;
+    
+    let errorElement = document.getElementById('map-error');
+    if (!errorElement) {
+        errorElement = document.createElement('div');
+        errorElement.id = 'map-error';
+        errorElement.className = 'map-error';
+        errorElement.style.cssText = 'position: absolute; top: 10px; left: 10px; background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 0.5rem; border-radius: 0.375rem; font-size: 0.875rem; z-index: 1000; max-width: 300px;';
+        mapContainer.appendChild(errorElement);
+    }
+    errorElement.textContent = message;
+}
+
+function clearMapError() {
+    const errorElement = document.getElementById('map-error');
+    if (errorElement) {
+        errorElement.remove();
+    }
 }
 
 // Update submit button state
 function updateSubmitButton(isValid = null) {
     const saveBtn = document.getElementById('saveSpace');
     const isValidForm = isValid !== null ? isValid : validateForm();
+    
     if (saveBtn) {
         saveBtn.disabled = !isValidForm;
-        if (isValidForm) saveBtn.classList.remove('btn-disabled');
-        else saveBtn.classList.add('btn-disabled');
+        
+        if (isValidForm) {
+            saveBtn.textContent = 'Save Space';
+            saveBtn.className = 'btn btn-success';
+            saveBtn.title = 'All required fields completed. Click to save your space.';
+            saveBtn.classList.remove('btn-disabled');
+        } else {
+            // Provide specific feedback about what's missing
+            const missingFields = getMissingFields();
+            if (missingFields.length > 0) {
+                saveBtn.textContent = `Complete: ${missingFields.join(', ')}`;
+                saveBtn.title = `Missing required fields: ${missingFields.join(', ')}`;
+            } else {
+                saveBtn.textContent = 'Draw a shape on the map';
+                saveBtn.title = 'Please draw a shape on the map before saving';
+            }
+            saveBtn.className = 'btn btn-secondary';
+            saveBtn.classList.add('btn-disabled');
+        }
     }
+}
+
+// Helper function to get missing fields for button feedback
+function getMissingFields() {
+    const missing = [];
+    
+    // Check required fields
+    const requiredFields = ['projectSelect', 'spaceCategory', 'companyName'];
+    requiredFields.forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (!field || !field.value.trim()) {
+            missing.push(getFieldDisplayName(fieldId));
+        }
+    });
+    
+    // Check phase selection
+    const selectedPhases = getSelectedPhases();
+    if (selectedPhases.length === 0) {
+        missing.push('Project Phases');
+    }
+    
+    // Check for shape - check currentShape, crane group, OR any existing shapes
+    const hasDrawable = !!currentShape || 
+                       (!!currentCraneGroup && isCraneModeActive === false && craneStage === 'idle') ||
+                       (drawnItems && drawnItems.getLayers().length > 0);
+    if (!hasDrawable) {
+        missing.push('Map Shape');
+    }
+    
+    return missing;
 }
 
 // Add undo button to Leaflet drawing toolbar
@@ -3098,275 +3009,17 @@ function addUndoButtonToToolbar() {
     }, 100);
 }
 
-// Add a custom Fence tool button that uses our own drawing logic
-function addFenceButtonToToolbar() {
-    setTimeout(() => {
-        const toolbar = document.querySelector('.leaflet-draw-toolbar');
-        if (!toolbar) return;
+// ✅ MIGRATED: addFenceButtonToToolbar moved to src/tool/fence.js
 
-        const btn = document.createElement('a');
-        btn.href = '#';
-        btn.title = 'Draw a fence (open or closed)';
-        btn.className = 'leaflet-draw-draw-fence';
-        btn.innerHTML = '⛓️';
-        btn.style.fontSize = '18px';
-        btn.style.cssText = `
-            background-color: #f8f9fa !important;
-            border: 1px solid #ccc !important;
-            color: #333 !important;
-            width: 52px !important;
-            height: 30px !important;
-            line-height: 30px !important;
-            text-align: center !important;
-            border-radius: 4px !important;
-            margin-left: 4px !important;
-            font-weight: 600 !important;
-            position: relative !important;
-        `;
-        
-        // Hide any Leaflet-added content
-        btn.addEventListener('DOMNodeInserted', function() {
-            const children = btn.children;
-            for (let i = 0; i < children.length; i++) {
-                if (children[i].tagName !== 'DIV') {
-                    children[i].style.display = 'none';
-                }
-            }
-        });
+// ✅ MIGRATED: startFenceDrawing moved to src/tool/fence.js
 
-        // Prevent map click propagation from this control
-        try {
-            if (window.L && L.DomEvent) {
-                L.DomEvent.disableClickPropagation(btn);
-                ['mousedown','mouseup','click','dblclick','touchstart','touchend'].forEach(evt => {
-                    L.DomEvent.on(btn, evt, L.DomEvent.stopPropagation);
-                });
-            }
-        } catch(_) {}
+// ✅ MIGRATED: stopFenceDrawing moved to src/tool/fence.js
 
-        btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (isFenceModeActive) {
-                // Toggle off
-                isFenceModeActive = false;
-                cleanupDrawingState();
-                updateDrawingStatus('Fence tool deactivated');
-                btn.style.opacity = '1';
-            } else {
-                // Activate
-                isFenceModeActive = true;
-                startFenceDrawing();
-                updateDrawingStatus('Fence tool activated - click to add points');
-                btn.style.opacity = '0.8';
-            }
-        });
+// ✅ MIGRATED: All fence functions moved to src/tool/fence.js
 
-        toolbar.appendChild(btn);
-    }, 150);
-}
+// ✅ MIGRATED: Helper functions moved to src/tool/fence.js
 
-function startFenceDrawing() {
-    // Prevent drawing if a shape already exists
-    if (currentShape) {
-        console.log('Fence drawing prevented - shape already exists');
-        updateDrawingStatus('Remove existing shape before drawing a new one');
-        return;
-    }
-    // Reset state
-    isDrawing = true;
-    drawingVertices = [];
-    finishingOpenFence = false;
-    closingFenceToStart = false;
-    removeFinishMarkers();
-    // Remove any existing measurement markers from prior modes
-    try {
-        if (drawingMarkers && drawingMarkers.length) {
-            drawingMarkers.forEach(m => { try { map.removeLayer(m); } catch(_){} });
-        }
-        drawingMarkers = [];
-    } catch(_) {}
-
-    // Clear realtime markers
-    try {
-        fenceRealtimeMarkers.forEach(m => { try { map.removeLayer(m); } catch(_){} });
-    } catch(_) {}
-    fenceRealtimeMarkers = [];
-    if (fenceMouseDistanceMarker) { try { map.removeLayer(fenceMouseDistanceMarker); } catch(_) {} fenceMouseDistanceMarker = null; }
-
-    // Temporarily detach Leaflet.Draw listeners to avoid interference
-    try {
-        map.off('draw:drawstart', onDrawStart);
-        map.off('draw:drawstop', onDrawStop);
-        map.off('draw:drawing', onDrawing);
-        const active = window.drawControl?._toolbars?.draw?._activeMode?.handler;
-        if (active && typeof active.disable === 'function') {
-            try { active.disable(); } catch(_) {}
-        }
-    } catch(_) {}
-
-    // Create a yellow polyline to preview
-    if (drawingPolyline) { try { map.removeLayer(drawingPolyline); } catch(_){} }
-    drawingPolyline = L.polyline([], { color: '#ffd700', weight: 3, opacity: 0.8 }).addTo(map);
-
-    // Mouse move for guide line and measurement
-    if (!mouseMarker) {
-        mouseMarker = L.circleMarker([0,0], { radius: 4, color: '#ffd700', fillColor: '#ffd700', fillOpacity: 0.8, weight: 2 }).addTo(map);
-    }
-    if (!mouseLine) {
-        mouseLine = L.polyline([], { color: '#ffd700', weight: 2, dashArray: '5,5', opacity: 0.8 }).addTo(map);
-    }
-
-    // Bind events
-    map.on('click', onFenceMapClick);
-    map.on('mousemove', onFenceMouseMove);
-    document.addEventListener('keydown', onFenceKeyDown);
-
-    // Set crosshair cursor to indicate drawing mode
-    try { map.getContainer().style.cursor = 'crosshair'; } catch(_) {}
-    setDrawingModeActive(true);
-}
-
-function stopFenceDrawing() {
-    isDrawing = false;
-    isFenceModeActive = false;
-    map.off('click', onFenceMapClick);
-    map.off('mousemove', onFenceMouseMove);
-    document.removeEventListener('keydown', onFenceKeyDown);
-    // Re-attach Leaflet.Draw listeners
-    try {
-        map.on('draw:drawstart', onDrawStart);
-        map.on('draw:drawstop', onDrawStop);
-        map.on('draw:drawing', onDrawing);
-    } catch(_) {}
-    cleanupDrawingState();
-
-    // Restore cursor
-    try { map.getContainer().style.cursor = ''; } catch(_) {}
-    setDrawingModeActive(false);
-}
-
-function onFenceMapClick(e) {
-    if (!isFenceModeActive) return;
-    let latlng = e.latlng;
-    if (drawingVertices.length > 0) {
-        const last = drawingVertices[drawingVertices.length - 1];
-        latlng = maybeSnapLatLngFrom(last, latlng, e.originalEvent);
-    }
-    // Map clicks always add vertices; finishing happens only via the finish markers or Enter
-    if (!drawingPolyline) {
-        drawingPolyline = L.polyline([], { color: '#ffd700', weight: 3, opacity: 0.8 }).addTo(map);
-    }
-
-    drawingVertices.push(latlng);
-    drawingPolyline.setLatLngs(drawingVertices);
-    updateFinishMarkers();
-    // Realtime measurement for the segment just completed (if >=2 vertices)
-    if (drawingVertices.length >= 2) {
-        const a = drawingVertices[drawingVertices.length - 2];
-        const b = drawingVertices[drawingVertices.length - 1];
-        const distance = calculateDistanceInFeet(a, b);
-        const mid = L.latLng((a.lat + b.lat)/2, (a.lng + b.lng)/2);
-        const label = L.divIcon({
-            className: 'distance-label',
-            html: `<div style="background: rgba(255,255,255,0.95); border: 2px solid #0078d4; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: bold; color: #0078d4; white-space: nowrap; box-shadow: 0 3px 6px rgba(0,0,0,0.3); pointer-events: none; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; min-width: 60px;">${distance.toFixed(1)} ft</div>`,
-            iconSize: [0,0], iconAnchor: [0,0]
-        });
-        const m = L.marker(mid, { icon: label }).addTo(map);
-        fenceRealtimeMarkers.push(m);
-    }
-}
-
-function onFenceMouseMove(e) {
-    if (!isFenceModeActive || drawingVertices.length === 0) return;
-    const last = drawingVertices[drawingVertices.length - 1];
-    // Snap preview when Shift is held
-    const snappedLatLng = maybeSnapLatLngFrom(last, e.latlng, e.originalEvent);
-    if (!mouseMarker) {
-        mouseMarker = L.circleMarker([0,0], { radius: 4, color: '#ffd700', fillColor: '#ffd700', fillOpacity: 0.8, weight: 2 }).addTo(map);
-    }
-    if (!mouseLine) {
-        mouseLine = L.polyline([], { color: '#ffd700', weight: 2, dashArray: '5,5', opacity: 0.8 }).addTo(map);
-    }
-    try { mouseMarker.setLatLng(snappedLatLng); } catch(_) {}
-    try { mouseLine.setLatLngs([last, snappedLatLng]); } catch(_) {}
-
-    // Realtime distance label from last vertex to mouse
-    const dist = calculateDistanceInFeet(last, snappedLatLng);
-    const mid = L.latLng((last.lat + snappedLatLng.lat)/2, (last.lng + snappedLatLng.lng)/2);
-    const icon = L.divIcon({
-        className: 'distance-label',
-        html: `<div style="background: rgba(255,255,255,0.9); border: 2px dashed #0078d4; border-radius: 6px; padding: 4px 8px; font-size: 11px; font-weight: 600; color: #0078d4; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.2); pointer-events: none;">${dist.toFixed(1)} ft</div>`,
-        iconSize: [0,0], iconAnchor: [0,0]
-    });
-    if (!fenceMouseDistanceMarker) {
-        fenceMouseDistanceMarker = L.marker(mid, { icon }).addTo(map);
-    } else {
-        try { fenceMouseDistanceMarker.setLatLng(mid); fenceMouseDistanceMarker.setIcon(icon); } catch(_) {}
-    }
-}
-
-function onFenceKeyDown(e) {
-    if (!isFenceModeActive) return;
-    if (e.key === 'Enter' && drawingVertices.length >= 2) {
-        // Finish open by default using custom finalize (avoid Leaflet.Draw)
-        e.preventDefault();
-        finishingOpenFence = true;
-        finalizeFence();
-    } else if (e.key === 'Escape') {
-        stopFenceDrawing();
-    }
-}
-
-function finalizeFence() {
-    // Build coords for final fence
-    let coords = drawingVertices.slice();
-    if (closingFenceToStart) {
-        const first = coords[0];
-        const last = coords[coords.length - 1];
-        if (!isSamePoint(first, last)) coords.push(first);
-    }
-
-    // Create the final fence layer
-    const fence = L.polyline(coords, { color: '#ffd700', weight: 3, opacity: 0.8 });
-    drawnItems.addLayer(fence);
-    currentShape = fence;
-
-    // Clear realtime markers
-    try {
-        fenceRealtimeMarkers.forEach(m => { try { map.removeLayer(m); } catch(_){} });
-    } catch(_) {}
-    fenceRealtimeMarkers = [];
-    if (fenceMouseDistanceMarker) { try { map.removeLayer(fenceMouseDistanceMarker); } catch(_) {} fenceMouseDistanceMarker = null; }
-
-    // Distance labels (final)
-    addFenceDistanceLabels(fence);
-
-    // Popup
-    let totalLength = 0;
-    for (let i = 0; i < coords.length - 1; i++) totalLength += calculateDistanceInFeet(coords[i], coords[i+1]);
-    fence.bindPopup(`
-        <strong>Fence</strong><br>
-        Total Length: ${totalLength.toFixed(1)} ft<br>
-        Segments: ${coords.length - 1}<br>
-        ${closingFenceToStart ? '(Closed)' : '(Open-ended)'}<br>
-        Double-click to edit | Use Undo to remove
-    `);
-
-    // Click handlers
-    fence.on('click', function(){ currentShape = fence; updateSubmitButton(); });
-
-    // Push to undo stack
-    undoStack.push({ action: 'draw', shape: fence });
-    updateUndoButton();
-
-    // Stop drawing and cleanup guides/markers
-    stopFenceDrawing();
-}
-
-function addPermanentSegmentLabel(a, b) {
-    // Deprecated: we no longer add labels during drawing to prevent 0 ft artifacts
-}
+// ✅ MIGRATED: All remaining fence functions moved to src/tool/fence.js
 
 function isSamePoint(a, b) {
     if (!a || !b) return false;
@@ -3473,6 +3126,13 @@ function updateDrawingStatus(message, type = 'ready') {
     } catch(_) {}
 }
 
+// Update tool state
+function updateToolState(tool, stage = 'idle', selection = null, drawing = false) {
+    if (window.ToolStatus && typeof window.ToolStatus.updateState === 'function') {
+        window.ToolStatus.updateState({ tool, stage, selection, drawing });
+    }
+}
+
 // ===================== Crane Tool =====================
 let isCraneModeActive = false;
 let craneStage = 'idle'; // 'pad' | 'radius' | 'sweep'
@@ -3492,395 +3152,17 @@ let craneSweepSector = null;
 let craneRealtimeLabels = [];
 let currentCraneGroup = null;
 
-function addCraneButtonToToolbar() {
-    setTimeout(() => {
-        const toolbar = document.querySelector('.leaflet-draw-toolbar');
-        if (!toolbar) return;
-        const btn = document.createElement('a');
-        btn.href = '#';
-        btn.title = 'Crane (Pad → Radius → Sweep)';
-        btn.className = 'leaflet-draw-draw-crane';
-        btn.innerHTML = '🏗️';
-        btn.style.fontSize = '18px';
-        btn.style.cssText = `
-            background-color: #f8f9fa !important;
-            border: 1px solid #ccc !important;
-            color: #333 !important;
-            width: 52px !important;
-            height: 30px !important;
-            line-height: 30px !important;
-            text-align: center !important;
-            border-radius: 4px !important;
-            margin-left: 4px !important;
-            font-weight: 600 !important;
-            position: relative !important;
-        `;
-        
-        // Hide any Leaflet-added content
-        btn.addEventListener('DOMNodeInserted', function() {
-            const children = btn.children;
-            for (let i = 0; i < children.length; i++) {
-                if (children[i].tagName !== 'DIV') {
-                    children[i].style.display = 'none';
-                }
-            }
-        });
-        
-        btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (isCraneModeActive) {
-                stopCraneDrawing();
-                btn.style.opacity = '1';
-            } else {
-                startCraneDrawing();
-                btn.style.opacity = '0.8';
-            }
-        });
-        toolbar.appendChild(btn);
-    }, 180);
-}
+// ✅ MIGRATED: addCraneButtonToToolbar moved to src/tool/crane.js
 
-function startCraneDrawing() {
-    if (currentShape) {
-        updateDrawingStatus('Remove existing shape before starting a crane');
-        return;
-    }
-    isCraneModeActive = true;
-    setDrawingModeActive(true);
-    craneStage = 'pad';
-    cranePadFirstCorner = null;
-    cranePadRect = null;
-    cranePadCenter = null;
-    craneRadiusLine = null;
-    craneRadiusMeters = 0;
-    craneRadiusFeet = 0;
-    craneStartAzimuthRad = 0;
-    craneSweepSector = null;
-    craneRealtimeLabels = [];
-    currentCraneGroup = new L.FeatureGroup();
-    window.cranesLayer.addLayer(currentCraneGroup);
-    updateDrawingStatus('Draw Crane Pad/Footprint', 'drawing');
-    map.on('click', onCraneClick);
-    map.on('mousemove', onCraneMouseMove);
-    document.addEventListener('keydown', onCraneKeyDown);
-}
+// ✅ MIGRATED: startCraneDrawing moved to src/tool/crane.js
 
-function stopCraneDrawing() {
-    isCraneModeActive = false;
-    craneStage = 'idle';
-    map.off('click', onCraneClick);
-    map.off('mousemove', onCraneMouseMove);
-    document.removeEventListener('keydown', onCraneKeyDown);
-    clearCraneRealtimeLabels();
-    setDrawingModeActive(false);
-    updateDrawingStatus('Ready');
-}
+// ✅ MIGRATED: stopCraneDrawing moved to src/tool/crane.js
 
-function onCraneKeyDown(e) {
-    if (!isCraneModeActive) return;
-    if (e.key === 'Escape') {
-        // Cancel and cleanup
-        try { if (currentCraneGroup) { window.cranesLayer.removeLayer(currentCraneGroup); } } catch(_) {}
-        currentCraneGroup = null;
-        stopCraneDrawing();
-    } else if ((e.key === 'Enter' || e.key === ' ') && craneStage === 'sweep' && craneSweepSector) {
-        finalizeCrane();
-    }
-}
+// ✅ MIGRATED: onCraneKeyDown moved to src/tool/crane.js
 
-function onCraneClick(e) {
-    if (!isCraneModeActive) return;
-    if (craneStage === 'pad') {
-        if (!cranePadFirstCorner) {
-            cranePadFirstCorner = e.latlng;
-        } else {
-            // finalize rect
-            const second = e.latlng;
-            const bounds = L.latLngBounds(cranePadFirstCorner, second);
-            if (cranePadRect) { try { currentCraneGroup.removeLayer(cranePadRect); } catch(_){} }
-            cranePadRect = L.rectangle(bounds, { 
-                color: '#1f2937',  // Dark grey for crane pad
-                weight: 2,
-                fillColor: '#1f2937',
-                fillOpacity: 0.6
-            });
-            currentCraneGroup.addLayer(cranePadRect);
-            cranePadCenter = bounds.getCenter();
-            // advance
-            craneStage = 'radius';
-            updateDrawingStatus('Draw Crane Swing Radius', 'drawing');
-        }
-    } else if (craneStage === 'radius') {
-        // Fix radius. If Shift was used during radius stage, keep the locked length
-        let finalTarget = e.latlng;
-        if (craneRadiusLockPx !== null) {
-            const centerPt = map.latLngToContainerPoint(cranePadCenter);
-            const mousePt = map.latLngToContainerPoint(e.latlng);
-            const ang = Math.atan2(mousePt.y - centerPt.y, mousePt.x - centerPt.x);
-            const inc = Math.PI / 36; // 5° increments
-            const snapped = Math.round(ang / inc) * inc;
-            const snapPt = L.point(
-                centerPt.x + craneRadiusLockPx * Math.cos(snapped),
-                centerPt.y + craneRadiusLockPx * Math.sin(snapped)
-            );
-            finalTarget = map.containerPointToLatLng(snapPt);
-        }
-        setCraneRadius(finalTarget);
-        craneStartDeg = Math.round(radToDeg(craneStartAzimuthRad));
-        craneLastAngleDeg = craneStartDeg;
-        craneSweepAccumDeg = 0;
-        craneStage = 'sweep';
-        updateDrawingStatus('Draw Crane Swing Sweep', 'drawing');
-    } else if (craneStage === 'sweep') {
-        finalizeCrane();
-    }
-}
+// ✅ MIGRATED: onCraneClick moved to src/tool/crane.js
 
-function onCraneMouseMove(e) {
-    if (!isCraneModeActive) return;
-    if (craneStage === 'pad') {
-        if (!cranePadFirstCorner) return;
-        const bounds = L.latLngBounds(cranePadFirstCorner, e.latlng);
-        if (!cranePadRect) {
-            cranePadRect = L.rectangle(bounds, { 
-                color: '#1f2937',  // Dark grey for crane pad
-                weight: 2,
-                fillColor: '#1f2937',
-                fillOpacity: 0.6
-            });
-            currentCraneGroup.addLayer(cranePadRect);
-        } else {
-            cranePadRect.setBounds(bounds);
-        }
-        // Measure
-        clearCraneRealtimeLabels();
-        const ne = bounds.getNorthEast();
-        const sw = bounds.getSouthWest();
-        const widthFeet = calculateDistanceInFeet({lat: ne.lat, lng: sw.lng}, {lat: ne.lat, lng: ne.lng});
-        const heightFeet = calculateDistanceInFeet({lat: sw.lat, lng: ne.lng}, {lat: ne.lat, lng: ne.lng});
-        const areaFeet = Math.round(widthFeet * heightFeet);
-        const center = bounds.getCenter();
-        craneRealtimeLabels.push(addCraneLabel(center.lat, center.lng, `${Math.round(widthFeet)} ft × ${Math.round(heightFeet)} ft\n${areaFeet} sq ft`));
-    } else if (craneStage === 'radius' && cranePadCenter) {
-        // If Shift is down, lock the length to the first Shift press and snap angle to 5°
-        let target = e.latlng;
-        const shiftActive = (e.originalEvent && e.originalEvent.shiftKey) || isShiftDown;
-        const centerPt = map.latLngToContainerPoint(cranePadCenter);
-        const mousePt = map.latLngToContainerPoint(e.latlng);
-        if (shiftActive) {
-            // Initialize lock length once
-            if (craneRadiusLockPx === null) {
-                craneRadiusLockPx = Math.hypot(mousePt.x - centerPt.x, mousePt.y - centerPt.y);
-            }
-            // Snap angle to 5° increments but keep length locked
-            const ang = Math.atan2(mousePt.y - centerPt.y, mousePt.x - centerPt.x);
-            const inc = Math.PI / 36; // 5 degrees
-            const snapped = Math.round(ang / inc) * inc;
-            const snapPt = L.point(
-                centerPt.x + craneRadiusLockPx * Math.cos(snapped),
-                centerPt.y + craneRadiusLockPx * Math.sin(snapped)
-            );
-            target = map.containerPointToLatLng(snapPt);
-        } else {
-            craneRadiusLockPx = null;
-            // No lock: allow free move with optional 1° snap if Shift-free snapping is desired elsewhere
-        }
-        setCraneRadius(target, true);
-    } else if (craneStage === 'sweep' && cranePadCenter && craneRadiusMeters > 0) {
-        drawCraneSector(e.latlng, true);
-    }
-}
-
-function setCraneRadius(targetLatLng, previewOnly = false) {
-    clearCraneRealtimeLabels();
-    if (!cranePadCenter) return;
-    // Create/update radius line
-    if (!craneRadiusLine) {
-        craneRadiusLine = L.polyline([cranePadCenter, targetLatLng], { 
-            color: '#1f2937',  // Dark grey for radius line
-            weight: 3,
-            dashArray: '5, 5'
-        });
-        currentCraneGroup.addLayer(craneRadiusLine);
-    } else {
-        craneRadiusLine.setLatLngs([cranePadCenter, targetLatLng]);
-    }
-    // Distance and azimuth
-    craneRadiusFeet = calculateDistanceInFeet(cranePadCenter, targetLatLng);
-    craneRadiusMeters = craneRadiusFeet / 3.28084;
-    craneStartAzimuthRad = bearingRad(cranePadCenter, targetLatLng);
-    // Screen-space radius in pixels for exact visual match
-    try {
-        const c = map.latLngToContainerPoint(cranePadCenter);
-        const t = map.latLngToContainerPoint(targetLatLng);
-        craneRadiusPx = Math.hypot(t.x - c.x, t.y - c.y);
-    } catch(_) { craneRadiusPx = 0; }
-    const mid = L.latLng((cranePadCenter.lat + targetLatLng.lat)/2, (cranePadCenter.lng + targetLatLng.lng)/2);
-    craneRealtimeLabels.push(addCraneLabel(mid.lat, mid.lng, `${Math.round(craneRadiusFeet)} ft`));
-}
-
-function drawCraneSector(currentLatLng, previewOnly = false) {
-    clearCraneRealtimeLabels();
-    // Current angle in whole degrees
-    const currentDeg = wholeDegreeBearing(cranePadCenter, currentLatLng);
-    if (craneLastAngleDeg === null) {
-        craneLastAngleDeg = currentDeg;
-    }
-    // Incremental change limited to shortest path per frame
-    const delta = normalizeAngle(currentDeg - craneLastAngleDeg);
-    craneSweepAccumDeg += delta;
-    // Clamp total sweep to [-360, 360]
-    if (craneSweepAccumDeg > 360) craneSweepAccumDeg = 360;
-    if (craneSweepAccumDeg < -360) craneSweepAccumDeg = -360;
-    craneLastAngleDeg = currentDeg;
-    // Build sector polygon in screen space for perfect radius match
-    const sectorLatLngs = buildSectorLatLngsFromPixels(cranePadCenter, craneRadiusPx, craneStartDeg, craneStartDeg + craneSweepAccumDeg, 1);
-    if (!craneSweepSector) {
-        craneSweepSector = L.polygon(sectorLatLngs, { 
-            color: '#dc2626',  // Red dashed outline for sweep sector
-            weight: 3,
-            fillColor: '#f59e0b',  // Orange fill
-            fillOpacity: 0.25,
-            dashArray: '10, 5'  // Red dashed outline
-        });
-        currentCraneGroup.addLayer(craneSweepSector);
-        try { craneSweepSector._path.style.fill = 'url(#craneCautionPattern)'; } catch(_) {}
-    } else {
-        craneSweepSector.setLatLngs([sectorLatLngs]);
-        try { craneSweepSector._path.style.fill = 'url(#craneCautionPattern)'; } catch(_) {}
-    }
-    craneRealtimeLabels.push(addCraneLabel(cranePadCenter.lat, cranePadCenter.lng, `${Math.round(Math.abs(craneSweepAccumDeg))}° sweep`));
-}
-
-function finalizeCrane() {
-    clearCraneRealtimeLabels();
-    // Push to undo as a single action
-    undoStack.push({ action: 'draw', shape: currentCraneGroup });
-    updateUndoButton();
-    // Popup summary on sector or group center
-    try {
-        const center = cranePadCenter || map.getCenter();
-        const summary = `Crane\nPad center: ${center.lat.toFixed(5)}, ${center.lng.toFixed(5)}\nRadius: ${Math.round(craneRadiusFeet)} ft`;
-        if (craneSweepSector) { craneSweepSector.bindPopup(summary); }
-    } catch(_) {}
-    // Reset tool state but keep crane on map
-    stopCraneDrawing();
-}
-
-function clearCraneRealtimeLabels() {
-    try {
-        craneRealtimeLabels.forEach(m => { try { map.removeLayer(m); } catch(_){} });
-    } catch(_) {}
-    craneRealtimeLabels = [];
-}
-
-function addCraneLabel(lat, lng, text) {
-    const marker = L.marker([lat, lng], {
-        icon: L.divIcon({
-            className: 'crane-measurement-label',
-            html: `<div style="background: rgba(255,255,255,0.98); border: 2px solid ${getStyleOrDefault('craneLabelBorder', '#111827')}; border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 700; color: ${getStyleOrDefault('craneLabelText', '#111827')}; white-space: pre; box-shadow: 0 3px 6px rgba(0,0,0,0.3); pointer-events: none;">${text}</div>`,
-            iconSize: [0,0], iconAnchor: [0,0]
-        })
-    }).addTo(map);
-    return marker;
-}
-
-// Build sector lat/lngs from center, radius (meters), start/end deg, step deg
-function buildSectorLatLngs(center, radiusMeters, startDeg, endDeg, stepDeg) {
-    const pts = [];
-    const start = normalizeAngle(startDeg);
-    const end = normalizeAngle(endDeg);
-    let sweep = normalizeAngle(end - start);
-    const step = Math.max(1, Math.min(10, Math.abs(stepDeg|0)));
-    // perimeter
-    for (let a = 0; a <= Math.abs(sweep); a += step) {
-        const ang = degToRad(start + Math.sign(sweep) * a);
-        pts.push(destinationPoint(center, radiusMeters, ang));
-    }
-    // close back to center
-    pts.push(center);
-    return pts;
-}
-
-// Sector builder using pixel radius to ensure exact visual match to the radius line
-function buildSectorLatLngsFromPixels(center, radiusPx, startDeg, endDeg, stepDeg) {
-    const pts = [];
-    const start = startDeg;
-    const end = endDeg;
-    const sweep = end - start; // can exceed 180
-    const step = Math.max(1, Math.min(10, Math.abs(stepDeg|0)));
-    const c = map.latLngToContainerPoint(center);
-    const dir = sweep >= 0 ? 1 : -1;
-    for (let a = 0; a <= Math.abs(sweep); a += step) {
-        const ang = degToRad(start + dir * a);
-        const px = L.point(c.x + radiusPx * Math.cos(ang), c.y + radiusPx * Math.sin(ang));
-        pts.push(map.containerPointToLatLng(px));
-    }
-    pts.push(center);
-    return pts;
-}
-
-// Shift-based snapping around a center point to N-degree increments
-function maybeSnapFromCenterDegrees(center, point, domEventOrNull, incrementDegrees = 1) {
-    try {
-        const shiftActive = (domEventOrNull && domEventOrNull.shiftKey) || isShiftDown;
-        if (!shiftActive) return point;
-        const p1 = map.latLngToContainerPoint(center);
-        const p2 = map.latLngToContainerPoint(point);
-        const dx = p2.x - p1.x;
-        const dy = p2.y - p1.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist === 0) return point;
-        const angle = Math.atan2(dy, dx);
-        const inc = (Math.PI / 180) * incrementDegrees;
-        const snappedAngle = Math.round(angle / inc) * inc;
-        const snapped = L.point(p1.x + dist * Math.cos(snappedAngle), p1.y + dist * Math.sin(snappedAngle));
-        return map.containerPointToLatLng(snapped);
-    } catch(_) { return point; }
-}
-
-// Bearing helpers (whole-degree snapping)
-function bearingRad(from, to) {
-    const p1 = map.latLngToContainerPoint(from);
-    const p2 = map.latLngToContainerPoint(to);
-    const dx = p2.x - p1.x;
-    const dy = p2.y - p1.y;
-    return Math.atan2(dy, dx);
-}
-function degToRad(d) { return d * Math.PI / 180; }
-function radToDeg(r) { return r * 180 / Math.PI; }
-function normalizeAngle(deg) { let d = deg % 360; if (d > 180) d -= 360; if (d <= -180) d += 360; return d; }
-function wholeDegreeBearing(center, point) {
-    const rad = bearingRad(center, point);
-    return Math.round(radToDeg(rad));
-}
-function snapFromCenterWholeDegrees(center, point) {
-    const p1 = map.latLngToContainerPoint(center);
-    const p2 = map.latLngToContainerPoint(point);
-    const dx = p2.x - p1.x;
-    const dy = p2.y - p1.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist === 0) return point;
-    const ang = Math.atan2(dy, dx);
-    const snappedDeg = Math.round(radToDeg(ang));
-    const snappedRad = degToRad(snappedDeg);
-    const snapped = L.point(p1.x + dist * Math.cos(snappedRad), p1.y + dist * Math.sin(snappedRad));
-    return map.containerPointToLatLng(snapped);
-}
-
-// Destination point in lat/lng from center, distance (m), bearing (rad)
-function destinationPoint(center, distanceMeters, bearingRadVal) {
-    // Approximate by projecting to container points for small spans (screen-orthonormal), consistent with other preview math
-    const p = map.latLngToContainerPoint(center);
-    // Convert meters to pixels using scale at center
-    const pEast = map.latLngToContainerPoint(L.latLng(center.lat, center.lng + 0.00001));
-    const metersPerPixel = (calculateDistanceInFeet(center, map.containerPointToLatLng(L.point(p.x + 1, p.y))) / 3.28084);
-    const px = distanceMeters / metersPerPixel;
-    const dx = px * Math.cos(bearingRadVal);
-    const dy = px * Math.sin(bearingRadVal);
-    return map.containerPointToLatLng(L.point(p.x + dx, p.y + dy));
-}
+// ✅ MIGRATED: All crane functions moved to src/tool/crane.js
 
 function injectCautionPattern() {
     try {
@@ -3940,13 +3222,13 @@ function previewRequest() {
     
     previewContent.innerHTML = `
         <div class="preview-item">
-            <strong>Company:</strong> ${requestData.companyName}
+            <strong>Company:</strong> ${escapeHtml(requestData.companyName || '')}
         </div>
         <div class="preview-item">
-            <strong>Project:</strong> ${PROJECTS[requestData.project].name}
+            <strong>Project:</strong> ${escapeHtml(PROJECTS[requestData.project]?.name || '')}
         </div>
         <div class="preview-item">
-            <strong>Project Phases:</strong> ${getSelectedPhaseNames().join(', ')}
+            <strong>Project Phases:</strong> ${escapeHtml(getSelectedPhaseNames().join(', '))}
         </div>
         <div class="preview-item">
             <strong>Space Category:</strong> ${requestData.spaceCategory}
@@ -3991,7 +3273,36 @@ function collectFormData() {
             const geometry = geoJSON.geometry;
             console.log('Extracted geometry:', geometry);
             return geometry;
-        })() : null,
+        })() : ((typeof window !== 'undefined' && window.currentCraneGroup) ? (() => {
+            // Serialize the crane FeatureGroup with explicit part tagging for styling on reload
+            try {
+                const features = [];
+                window.currentCraneGroup.eachLayer(function(layer) {
+                    try {
+                        let feat = layer.toGeoJSON();
+                        // Ensure Feature wrapper
+                        if (feat.type !== 'Feature') {
+                            feat = { type: 'Feature', geometry: feat, properties: {} };
+                        }
+                        feat.properties = feat.properties || {};
+                        if (layer === window.cranePadPoly || layer === window.cranePadRect) {
+                            feat.properties.part = 'pad';
+                        } else if (layer === window.craneSweepSector) {
+                            feat.properties.part = 'sweep';
+                        } else if (layer === window.craneRadiusLine) {
+                            feat.properties.part = 'radius';
+                        }
+                        features.push(feat);
+                    } catch (_) {}
+                });
+                if (features.length > 0) {
+                    return { type: 'FeatureCollection', features };
+                }
+                return null;
+            } catch (_) {
+                return null;
+            }
+        })() : null),
         submittedAt: new Date().toISOString(),
         requestId: generateRequestId()
     };
@@ -4011,14 +3322,25 @@ async function saveSpace() {
         return;
     }
     
-    if (!currentShape && !(currentCraneGroup && craneStage === 'idle' && !isCraneModeActive)) {
-        alert('Please draw a shape or finish the crane tool first.');
+    if (!hasDrawableSelection()) {
+        alert('Please draw a shape on the map first.');
         return;
     }
     
     try {
         // Get form data
         const formData = collectFormData();
+        
+        // Validate and sanitize form data
+        const validation = validateFormData(formData);
+        if (!validation.isValid) {
+            alert('Invalid input: ' + validation.errors.join(', '));
+            logSecurityEvent('INVALID_INPUT', 'Form validation failed', { errors: validation.errors });
+            return;
+        }
+        
+        // Use sanitized data
+        const sanitizedData = validation.data;
         
         // Validate that we have a project selected
         console.log('🔍 Validation check - formData.project:', formData.project);
@@ -4043,7 +3365,8 @@ async function saveSpace() {
             category: formData.spaceCategory,
             trade: formData.companyName,
             description: formData.description || '',
-            geometry: currentShape ? formData.geometry : buildCraneGeometry(),
+            // Use the geometry gathered in collectFormData for both normal shapes and crane FeatureGroup
+            geometry: formData.geometry,
             status: 'active'
         };
         
@@ -4057,6 +3380,10 @@ async function saveSpace() {
         
         if (error) {
             console.error('❌ Error saving space:', error);
+            logSecurityEvent('DATABASE_ERROR', 'Failed to save space', { 
+                error: error.message, 
+                spaceData: sanitizedData 
+            });
             alert('Failed to save space: ' + error.message);
             return;
         }
@@ -4086,7 +3413,11 @@ async function saveSpace() {
             }
         }
         
-        // Clear current shape and form for next space
+        // Clear current shape and any transient crane handles after save
+        try {
+            if (window.craneRotateHandle) { try { window.map.removeLayer(window.craneRotateHandle); } catch(_) {} }
+            window.craneRotateHandle = null;
+        } catch(_) {}
         clearCurrentShape();
         
         // Show success message
@@ -4141,6 +3472,7 @@ function clearCurrentShape() {
     enableDrawingControls();
     
     updateDrawingStatus('Ready to draw');
+    updateToolState('none', 'idle', null, false);
 }
 
 // Update save button state
@@ -4230,6 +3562,15 @@ async function loadProjectSpaces() {
         filteredSpaces.forEach(space => {
             displaySavedSpace(space);
         });
+
+        // Cleanup any transient crane UI left from drawing (rotate handles, labels)
+        try {
+            if (window.craneRotateHandle && savedSpacesLayer) {
+                try { window.map.removeLayer(window.craneRotateHandle); } catch(_) {}
+            }
+            window.craneRotateHandle = null;
+            window.craneRealtimeLabels = [];
+        } catch(_) {}
         
         // Update space count in UI
         updateSpaceCount(filteredSpaces.length);
@@ -4266,6 +3607,27 @@ function displaySavedSpace(space) {
                 });
                 // mark as saved-space
                 try { if (fenceLayer && fenceLayer._path) fenceLayer._path.classList.add('saved-space-layer'); } catch(_) {}
+                
+        // Add click handler to make it selectable
+        fenceLayer.on('click', function() {
+            currentShape = fenceLayer;
+            updateSubmitButton();
+            clearMapError();
+            // Update state tracking
+            updateToolState('edit', 'editing', fenceLayer, false);
+        });
+        
+        // Setup custom editing for this shape (with delay to ensure shape is fully initialized)
+        setTimeout(() => {
+            if (window.CustomEditing && typeof window.CustomEditing.setupShapeClickHandler === 'function') {
+                try {
+                    window.CustomEditing.setupShapeClickHandler(fenceLayer);
+                } catch (error) {
+                    console.warn('Error setting up custom editing for fence:', error);
+                }
+            }
+        }, 100);
+                
                 savedSpacesLayer.addLayer(fenceLayer);
                 return;
             } catch (e) {
@@ -4317,45 +3679,45 @@ function displaySavedSpace(space) {
         let layer;
         
         if (isCraneShape) {
-            // Handle crane shapes with different styling for each part
+            // Handle crane shapes with different styling for each part and suppress any points/pins
             layer = L.geoJSON(space.geometry, {
                 style: function(feature) {
                     const part = feature.properties?.part;
                     if (part === 'pad') {
-                        return {
-                            color: '#1f2937',  // Dark grey for crane pad
-                            fillColor: '#1f2937',
-                            fillOpacity: 0.6,
-                            weight: 2,
-                            opacity: 0.8
-                        };
-                    } else if (part === 'sweep') {
-                        return {
-                            color: '#dc2626',  // Red outline for sweep sector
-                            fillColor: '#f59e0b',  // Orange fill
-                            fillOpacity: 0.25,
-                            weight: 3,
-                            opacity: 0.8,
-                            dashArray: '10, 5'  // Red dashed outline
-                        };
+                        return { color: '#1f2937', fillColor: '#1f2937', fillOpacity: 0.6, weight: 2, opacity: 0.8 };
+                    } else if (part === 'sweep' || part === 'sector') {
+                        return { color: '#dc2626', fillColor: '#f59e0b', fillOpacity: 0.25, weight: 3, opacity: 0.8, dashArray: '10, 5' };
                     } else if (part === 'radius') {
                         // Hide radius line in saved crane shapes - it's only for drawing
-                        return {
-                            color: 'transparent',
-                            weight: 0,
-                            opacity: 0
-                        };
+                        return { color: 'transparent', weight: 0, opacity: 0 };
                     }
-                    // Default fallback
-                    return {
-                        color: '#1f2937',
-                        fillColor: '#1f2937',
-                        fillOpacity: 0.3,
-                        weight: 2,
-                        opacity: 0.8
-                    };
+                    // Hide any point features by default
+                    if (feature && feature.geometry && feature.geometry.type === 'Point') {
+                        return { color: 'transparent', weight: 0, opacity: 0 };
+                    }
+                    // Fallback styling
+                    return { color: '#1f2937', fillColor: '#1f2937', fillOpacity: 0.3, weight: 2, opacity: 0.8 };
+                },
+                pointToLayer: function(feature, latlng) {
+                    // Suppress pins/handles from saved geometry
+                    return L.circleMarker(latlng, { radius: 0, opacity: 0, fillOpacity: 0 });
                 }
             });
+            try { layer._isCraneShape = true; } catch(_) {}
+            try { layer._spaceId = space.id; } catch(_) {}
+            try { layer._spaceData = space; } catch(_) {}
+            // Ensure sublayers are clickable for selection
+            try {
+                layer.eachLayer(sub => {
+                    sub.on('click', function(e){
+                        e.originalEvent?.stopPropagation?.();
+                        currentShape = layer; // select the group, not a sub-part
+                        updateSubmitButton();
+                        clearMapError();
+                        updateToolState('edit', 'editing', layer, false);
+                    });
+                });
+            } catch(_) {}
         } else {
             // Regular shapes use standard styling
             layer = L.geoJSON(space.geometry, {
@@ -4395,7 +3757,9 @@ function displaySavedSpace(space) {
         ).join(', ') || 'No phases assigned';
         
         const area = space.geometry.type === 'Polygon' ? 
-            calculatePolygonArea(space.geometry.coordinates[0]) : 0;
+            (window.PolygonTool && window.PolygonTool.calculatePolygonArea ? 
+                window.PolygonTool.calculatePolygonArea(space.geometry.coordinates[0]) :
+                (window.calculatePolygonArea ? window.calculatePolygonArea(space.geometry.coordinates[0]) : 0)) : 0;
         
         // Add phase coverage information
         let phaseCoverageInfo = '';
@@ -4433,13 +3797,13 @@ function displaySavedSpace(space) {
         
         layer.bindPopup(`
             <div class="space-popup">
-                <h4>${space.space_name}</h4>
-                <p><strong>Category:</strong> ${space.category}</p>
-                <p><strong>Trade:</strong> ${space.trade}</p>
-                <p><strong>Assigned Phases:</strong> ${phaseNames}</p>
+                <h4>${escapeHtml(space.space_name || '')}</h4>
+                <p><strong>Category:</strong> ${escapeHtml(space.category || '')}</p>
+                <p><strong>Trade:</strong> ${escapeHtml(space.trade || '')}</p>
+                <p><strong>Assigned Phases:</strong> ${escapeHtml(phaseNames || '')}</p>
                 ${phaseCoverageInfo}
                 <p><strong>Area:</strong> ${Math.round(area)} sq ft</p>
-                <p><strong>Description:</strong> ${space.description || 'No description'}</p>
+                <p><strong>Description:</strong> ${escapeHtml(space.description || 'No description')}</p>
                 <div class="space-actions">
                     <button onclick="editSavedSpace(${space.id})" class="btn btn-sm btn-primary">Edit</button>
                     <button onclick="deleteSavedSpace(${space.id})" class="btn btn-sm btn-danger">Delete</button>
@@ -4447,13 +3811,38 @@ function displaySavedSpace(space) {
             </div>
         `);
         
-        // Add click handler to select this space
-        layer.on('click', function() {
+        // Add click handler to select this space (support GeoJSON/group)
+        const onSelect = function() {
             console.log('📍 Saved space clicked:', space);
-        });
+            currentShape = layer;
+            try { window.lastSelectedSpaceLayer = layer; } catch(_) {}
+            try { window.lastSelectedSpaceId = space.id; } catch(_) {}
+            updateSubmitButton();
+            clearMapError();
+            // Update state tracking
+            updateToolState('edit', 'editing', layer, false);
+        };
+        layer.on('click', onSelect);
+        try { layer.eachLayer(sl => sl.on('click', e => { e.originalEvent?.stopPropagation?.(); onSelect(); })); } catch(_) {}
+        
+        // Setup custom editing for this shape (with delay to ensure shape is fully initialized)
+        setTimeout(() => {
+            if (window.CustomEditing && typeof window.CustomEditing.setupShapeClickHandler === 'function') {
+                try {
+                    window.CustomEditing.setupShapeClickHandler(layer);
+                } catch (error) {
+                    console.warn('Error setting up custom editing for saved space:', error);
+                }
+            }
+        }, 100);
         
         // Add to saved spaces layer
         savedSpacesLayer.addLayer(layer);
+
+        // Attach space id to layer for selection/delete
+        try { layer._spaceId = space.id; } catch(_) {}
+        try { layer._spaceData = space; } catch(_) {}
+        try { layer._isCraneShape = !!isCraneShape; } catch(_) {}
         
         console.log('✅ Displayed saved space:', space.space_name);
         
@@ -4463,16 +3852,7 @@ function displaySavedSpace(space) {
 }
 
 // Calculate area from polygon coordinates
-function calculatePolygonArea(coordinates) {
-    // Convert coordinates to Leaflet LatLng objects
-    const latLngs = coordinates.map(coord => L.latLng(coord[1], coord[0]));
-    
-    // Calculate area using Leaflet's geometry utility
-    const area = L.GeometryUtil.geodesicArea(latLngs);
-    
-    // Convert from square meters to square feet
-    return area * 10.764;
-}
+// ✅ MIGRATED: calculatePolygonArea moved to src/tool/polygon.js
 
 // Update space count in UI
 function updateSpaceCount(count) {
@@ -4607,11 +3987,11 @@ async function editSavedSpace(spaceId) {
                         </div>
                         <div style="margin-bottom: 1rem;">
                             <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Trade/Company *</label>
-                            <input type="text" id="editSpaceTrade" value="${space.trade}" required style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem;">
+                            <input type="text" id="editSpaceTrade" value="${escapeHtml(space.trade || '')}" required style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem;">
                         </div>
                         <div style="margin-bottom: 1rem;">
                             <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Description</label>
-                            <textarea id="editSpaceDescription" style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem; min-height: 80px;">${space.description || ''}</textarea>
+                            <textarea id="editSpaceDescription" style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem; min-height: 80px;">${escapeHtml(space.description || '')}</textarea>
                         </div>
                         <div style="margin-bottom: 1rem;">
                             <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Project Phases *</label>
@@ -5034,7 +4414,9 @@ async function exportProjectSpaces() {
             ).join(', ') || 'No phases assigned';
             
             const area = space.geometry.type === 'Polygon' ? 
-                calculatePolygonArea(space.geometry.coordinates[0]) : 0;
+                (window.PolygonTool && window.PolygonTool.calculatePolygonArea ? 
+                    window.PolygonTool.calculatePolygonArea(space.geometry.coordinates[0]) :
+                    (window.calculatePolygonArea ? window.calculatePolygonArea(space.geometry.coordinates[0]) : 0)) : 0;
             
             return {
                         "type": "Feature",
@@ -5129,7 +4511,9 @@ async function exportSpacesToTopoJSON(spaces) {
                     assignment.project_phases?.name || 'Unknown Phase'
                 ).join(', ') || 'No phases assigned';
                 
-                const area = calculatePolygonArea(space.geometry.coordinates[0]);
+                const area = window.PolygonTool && window.PolygonTool.calculatePolygonArea ? 
+                    window.PolygonTool.calculatePolygonArea(space.geometry.coordinates[0]) :
+                    (window.calculatePolygonArea ? window.calculatePolygonArea(space.geometry.coordinates[0]) : 0);
                 
                 const properties = {
                     OBJECTID: Date.now() + index,
@@ -5236,441 +4620,18 @@ function clearDistanceLabels(layer) {
     } catch(_) {}
 }
 
-function enablePolygonRotation(polygon) {
-    try {
-        const center = polygon.getBounds().getCenter();
-        const centerPt = map.latLngToLayerPoint(center);
-        const ring = polygon.getLatLngs()[0];
-        if (!ring || ring.length === 0) return;
+// ✅ MIGRATED: enablePolygonRotation moved to src/tool/polygon/edit.js
 
-        // Place handle offset from the first vertex outward
-        const first = ring[0];
-        const firstPt = map.latLngToLayerPoint(first);
-        const vec = L.point(firstPt.x - centerPt.x, firstPt.y - centerPt.y);
-        const mag = Math.max(40, Math.hypot(vec.x, vec.y));
-        const handlePt = L.point(centerPt.x + (vec.x / (mag || 1)) * (mag + 30), centerPt.y + (vec.y / (mag || 1)) * (mag + 30));
-        const handleLatLng = map.layerPointToLatLng(handlePt);
+// ✅ MIGRATED: repositionPolygonRotateHandle moved to src/tool/polygon/edit.js
 
-        const handleIcon = L.divIcon({
-            className: 'rotate-handle',
-            html: `<div style="
-                width: 28px; height: 28px; border-radius: 50%;
-                background: #ffffff; border: 2px solid #3b82f6;
-                display: flex; align-items: center; justify-content: center;
-                color: #1f2937; box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-            "><i class="fas fa-rotate-right"></i></div>`,
-            iconSize: [28, 28],
-            iconAnchor: [14, 14]
-        });
+// ✅ MIGRATED: updatePolygonWatermark moved to src/tool/polygon/edit.js
 
-        const handle = L.marker(handleLatLng, { draggable: true, opacity: 0.95, title: 'Rotate', icon: handleIcon }).addTo(map);
-        polygon._rotateHandle = handle;
-        polygon._rotationCenter = center;
-        polygon._originalRing = ring.map(ll => ({ lat: ll.lat, lng: ll.lng }));
+// ✅ MIGRATED: rotatePointAround moved to src/tool/polygon/edit.js
 
-        let startAngle = null;
-        handle.on('dragstart', () => {
-            const c = map.latLngToLayerPoint(polygon._rotationCenter);
-            const h = map.latLngToLayerPoint(handle.getLatLng());
-            startAngle = Math.atan2(h.y - c.y, h.x - c.x);
-            polygon._originalRing = polygon.getLatLngs()[0].map(ll => ({ lat: ll.lat, lng: ll.lng }));
-            // If edit mode is active, temporarily disable to avoid stale handles
-            try {
-                const editHandler = map?._drawControl?._toolbars?.edit?._modes?.edit?.handler;
-                if (editHandler && (editHandler._enabled || editHandler.enabled)) {
-                    polygon._resumeEditAfterRotate = true;
-                    editHandler.disable();
-                }
-            } catch(_) {}
-        });
-        handle.on('drag', () => {
-            if (startAngle === null) return;
-            const c = map.latLngToLayerPoint(polygon._rotationCenter);
-            const h = map.latLngToLayerPoint(handle.getLatLng());
-            const curAngle = Math.atan2(h.y - c.y, h.x - c.x);
-            const delta = curAngle - startAngle;
-            // Rotate original ring by delta
-            const rotated = polygon._originalRing.map(ll => rotatePointAround(ll, polygon._rotationCenter, delta));
-            polygon.setLatLngs([rotated]);
-            try { addDistanceLabels(polygon); } catch(_) {}
-            try { updatePolygonWatermark(polygon); } catch(_) {}
-            try {
-                const a = L.GeometryUtil.geodesicArea(rotated);
-                const aFt = Math.round(a * 10.764);
-                if (polygon.getPopup && polygon.getPopup()) {
-                    polygon.getPopup().setContent(`
-                        <strong>Drawn Area</strong><br>
-                        Area: ${aFt} sq ft<br>
-                        Double-click to edit | Use Undo to remove
-                    `);
-                }
-            } catch(_) {}
-        });
-        handle.on('dragend', () => {
-            // Recompute center and reposition handle a bit away
-            try {
-                polygon._rotationCenter = polygon.getBounds().getCenter();
-                repositionPolygonRotateHandle(polygon);
-            } catch(_) {}
-            // Reset baseline ring to current geometry
-            try {
-                polygon._originalRing = (polygon.getLatLngs()[0] || []).map(ll => ({ lat: ll.lat, lng: ll.lng }));
-            } catch(_) {}
+// ✅ MIGRATED: All rect model helpers moved to src/tool/rectangle/edit.js
 
-            // Replace polygon instance to force fresh edit handles
-            try {
-                const latlngsNow = (polygon.getLatLngs()[0] || []).map(ll => L.latLng(ll.lat, ll.lng));
-                const popupContent = (polygon.getPopup && polygon.getPopup()) ? polygon.getPopup().getContent() : null;
-                const existingWatermark = polygon._watermarkMarker || null;
+// ✅ MIGRATED: computeRectModelFromPolygon moved to src/tool/rectangle/edit.js
 
-                // Remove old labels and handle
-                try { clearDistanceLabels(polygon); } catch(_) {}
-                try { if (polygon._rotateHandle) map.removeLayer(polygon._rotateHandle); } catch(_) {}
+// ✅ MIGRATED: buildRectLatLngsFromModel moved to src/tool/rectangle/edit.js
 
-                // Remove old polygon from groups
-                try { drawnItems.removeLayer(polygon); } catch(_) { try { map.removeLayer(polygon); } catch(_) {} }
-
-                // Create new polygon and add to drawnItems
-                const newPoly = L.polygon(latlngsNow, { color: '#0078d4', weight: 3, fill: true, fillOpacity: 0.15 });
-                drawnItems.addLayer(newPoly);
-                currentShape = newPoly;
-
-                // Mark as rectangle-locked
-                try { newPoly._rectLocked = true; } catch(_) {}
-
-                // Restore popup
-                if (popupContent) { try { newPoly.bindPopup(popupContent); } catch(_) {} }
-
-                // Restore watermark
-                if (existingWatermark) {
-                    try {
-                        const center = newPoly.getBounds().getCenter();
-                        existingWatermark.setLatLng(center);
-                        newPoly._watermarkMarker = existingWatermark;
-                    } catch(_) {}
-                } else {
-                    try { updateCurrentShapeWatermark(); } catch(_) {}
-                }
-
-                // Add labels and rotation to new polygon
-                try { addDistanceLabels(newPoly); } catch(_) {}
-                try { enablePolygonRotation(newPoly); } catch(_) {}
-
-                // Wire basic click/dblclick
-                newPoly.on('click', function(){ currentShape = newPoly; updateSubmitButton(); });
-                newPoly.on('dblclick', function(){
-                    // Use custom rectangle scale mode
-                    try { disableRectScaleMode(newPoly); } catch(_) {}
-                    enableRectScaleMode(newPoly);
-                });
-
-                // Refresh edit mode handles and select this polygon
-                try {
-                    const editToolbar = map?._drawControl?._toolbars?.edit;
-                    const editHandler = editToolbar?._modes?.edit?.handler;
-                    if (editHandler) {
-                        try { editHandler.disable(); } catch(_) {}
-                        try { editHandler.enable(); } catch(_) {}
-                        setTimeout(() => {
-                            try {
-                                const group = editHandler._markersGroup || editHandler._featureGroup || null;
-                                if (group && typeof group.eachLayer === 'function') {
-                                    group.eachLayer(function(marker){
-                                        if (marker && marker._shape === newPoly) { try { marker.fire('click'); } catch(_) {} }
-                                    });
-                                }
-                            } catch(_) {}
-                        }, 80);
-                    }
-                } catch(_) {}
-            } catch(_) {}
-
-            // Clear resume flag
-            polygon._resumeEditAfterRotate = false;
-        });
-
-        // Clean up handle and labels if polygon removed
-        polygon.on('remove', () => {
-            try { if (polygon._rotateHandle) map.removeLayer(polygon._rotateHandle); } catch(_) {}
-            try { clearDistanceLabels(polygon); } catch(_) {}
-            try { if (polygon._watermarkMarker) map.removeLayer(polygon._watermarkMarker); } catch(_) {}
-        });
-
-        // Also reposition handle whenever polygon is edited (vertices moved)
-        polygon.on('edit', () => {
-            try {
-                polygon._rotationCenter = polygon.getBounds().getCenter();
-                repositionPolygonRotateHandle(polygon);
-                updatePolygonWatermark(polygon);
-            } catch(_) {}
-        });
-    } catch (err) {
-        console.warn('Failed to enable rotation on polygon:', err);
-    }
-}
-
-function repositionPolygonRotateHandle(polygon) {
-    try {
-        if (!polygon._rotateHandle) return;
-        const center = polygon._rotationCenter || polygon.getBounds().getCenter();
-        const centerPt = map.latLngToLayerPoint(center);
-        const ring = polygon.getLatLngs()[0];
-        if (!ring || ring.length === 0) return;
-        const firstPt = map.latLngToLayerPoint(ring[0]);
-        const vec = L.point(firstPt.x - centerPt.x, firstPt.y - centerPt.y);
-        const mag = Math.max(40, Math.hypot(vec.x, vec.y));
-        const handlePt = L.point(centerPt.x + (vec.x / (mag || 1)) * (mag + 30), centerPt.y + (vec.y / (mag || 1)) * (mag + 30));
-        const handleLatLng = map.layerPointToLatLng(handlePt);
-        polygon._rotateHandle.setLatLng(handleLatLng);
-    } catch(_) {}
-}
-
-function updatePolygonWatermark(polygon) {
-    try {
-        const center = polygon.getBounds().getCenter();
-        if (polygon._watermarkMarker) {
-            polygon._watermarkMarker.setLatLng(center);
-        } else if (polygon === currentShape) {
-            updateCurrentShapeWatermark();
-        }
-    } catch(_) {}
-}
-
-function rotatePointAround(latlng, centerLatLng, angleRad) {
-    try {
-        const p = map.latLngToLayerPoint(latlng);
-        const c = map.latLngToLayerPoint(centerLatLng);
-        const dx = p.x - c.x;
-        const dy = p.y - c.y;
-        const cos = Math.cos(angleRad);
-        const sin = Math.sin(angleRad);
-        const rx = dx * cos - dy * sin;
-        const ry = dx * sin + dy * cos;
-        const rp = L.point(c.x + rx, c.y + ry);
-        return map.layerPointToLatLng(rp);
-    } catch(_) { return latlng; }
-}
-
-// --- Rect model helpers for rotated-rectangle scale mode ---
-function _latLngsToPoints(latlngs) {
-    return latlngs.map(ll => map.latLngToLayerPoint(ll));
-}
-function _pointsToLatLngs(points) {
-    return points.map(p => map.layerPointToLatLng(p));
-}
-function _unit(vx, vy) {
-    const m = Math.hypot(vx, vy) || 1; return { x: vx / m, y: vy / m };
-}
-function _dot(ax, ay, bx, by) { return ax * bx + ay * by; }
-function _add(p, q) { return L.point(p.x + q.x, p.y + q.y); }
-function _sub(p, q) { return L.point(p.x - q.x, p.y - q.y); }
-function _mul(p, s) { return L.point(p.x * s, p.y * s); }
-
-function computeRectModelFromPolygon(polygon) {
-    try {
-        const ring = polygon.getLatLngs()[0];
-        if (!ring || ring.length < 4) return null;
-        const corners = [ring[0], ring[1], ring[2], ring[3]];
-        const pts = _latLngsToPoints(corners);
-        const center = L.point(
-            (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4,
-            (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4
-        );
-        const uVec = _unit(pts[1].x - pts[0].x, pts[1].y - pts[0].y); // width axis
-        const vVec = _unit(-(uVec.y), uVec.x); // height axis (90 deg)
-        const halfWidth = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y) / 2;
-        const halfHeight = Math.hypot(pts[2].x - pts[1].x, pts[2].y - pts[1].y) / 2;
-        const angle = Math.atan2(uVec.y, uVec.x);
-        return { center, halfWidth, halfHeight, angle, uVec, vVec };
-    } catch(_) { return null; }
-}
-
-function buildRectLatLngsFromModel(model) {
-    const { center, halfWidth: hw, halfHeight: hh, uVec, vVec } = model;
-    const p0 = _add(_add(center, _mul(L.point(uVec.x, uVec.y), -hw)), _mul(L.point(vVec.x, vVec.y), -hh));
-    const p1 = _add(_add(center, _mul(L.point(uVec.x, uVec.y),  hw)), _mul(L.point(vVec.x, vVec.y), -hh));
-    const p2 = _add(_add(center, _mul(L.point(uVec.x, uVec.y),  hw)), _mul(L.point(vVec.x, vVec.y),  hh));
-    const p3 = _add(_add(center, _mul(L.point(uVec.x, uVec.y), -hw)), _mul(L.point(vVec.x, vVec.y),  hh));
-    return _pointsToLatLngs([p0, p1, p2, p3]);
-}
-
-function enableRectScaleMode(polygon) {
-    try {
-        if (polygon._rectScaleActive) return;
-        polygon._rectScaleActive = true;
-
-        // Turn off default edit while in scale mode (avoid vertex handles)
-        try {
-            const editHandler = map?._drawControl?._toolbars?.edit?._modes?.edit?.handler;
-            if (editHandler && (editHandler._enabled || editHandler.enabled)) {
-                polygon._resumeEditAfterScale = true;
-                editHandler.disable();
-            }
-        } catch(_) {}
-
-        // Clear old custom handles
-        try {
-            if (polygon._rectScaleHandlesMid) polygon._rectScaleHandlesMid.forEach(h => { try { map.removeLayer(h); } catch(_){} });
-            if (polygon._rectScaleHandlesCorner) polygon._rectScaleHandlesCorner.forEach(h => { try { map.removeLayer(h); } catch(_){} });
-        } catch(_){}
-        polygon._rectScaleHandlesMid = [];
-        polygon._rectScaleHandlesCorner = [];
-
-        const model = computeRectModelFromPolygon(polygon);
-        if (!model) return;
-        polygon._rectModel = model;
-        const corners = polygon.getLatLngs()[0];
-        const mids = [
-            L.latLng((corners[0].lat + corners[1].lat) / 2, (corners[0].lng + corners[1].lng) / 2),
-            L.latLng((corners[1].lat + corners[2].lat) / 2, (corners[1].lng + corners[2].lng) / 2),
-            L.latLng((corners[2].lat + corners[3].lat) / 2, (corners[2].lng + corners[3].lng) / 2),
-            L.latLng((corners[3].lat + corners[0].lat) / 2, (corners[3].lng + corners[0].lng) / 2)
-        ];
-
-        const midIcon = L.divIcon({
-            className: 'rect-scale-handle',
-            html: '<div style="width:18px;height:18px;border-radius:4px;background:#ffffff;border:2px solid #10b981;box-shadow:0 2px 6px rgba(0,0,0,0.25);"></div>',
-            iconSize: [18, 18], iconAnchor: [9, 9]
-        });
-        const cornerIcon = L.divIcon({
-            className: 'rect-corner-handle',
-            html: '<div style="width:16px;height:16px;border-radius:50%;background:#ffffff;border:2px solid #0ea5e9;box-shadow:0 2px 6px rgba(0,0,0,0.25);"></div>',
-            iconSize: [16, 16], iconAnchor: [8, 8]
-        });
-
-        // Mid-edge handles: scale one dimension
-        mids.forEach((midLatLng, idx) => {
-            const handle = L.marker(midLatLng, { draggable: true, icon: midIcon, title: 'Scale' }).addTo(map);
-            polygon._rectScaleHandlesMid.push(handle);
-            let startPt = null;
-            let startModel = null;
-            handle.on('dragstart', () => {
-                startPt = map.latLngToLayerPoint(handle.getLatLng());
-                startModel = computeRectModelFromPolygon(polygon);
-                polygon._rectModel = startModel;
-            });
-            handle.on('drag', () => {
-                if (!startPt || !startModel) return;
-                const curPt = map.latLngToLayerPoint(handle.getLatLng());
-                const delta = L.point(curPt.x - startPt.x, curPt.y - startPt.y);
-                const u = startModel.uVec; const v = startModel.vVec;
-                let model = { ...startModel };
-                if (idx === 0 || idx === 2) {
-                    // width edge → adjust height along v
-                    const signed = _dot(delta.x, delta.y, v.x, v.y);
-                    model.halfHeight = Math.max(1, startModel.halfHeight + (idx === 0 ? -signed : signed));
-                    const centerShift = (idx === 0 ? -signed : signed) / 2;
-                    model.center = _add(startModel.center, _mul(L.point(v.x, v.y), centerShift));
-                } else {
-                    // height edge → adjust width along u
-                    const signed = _dot(delta.x, delta.y, u.x, u.y);
-                    model.halfWidth = Math.max(1, startModel.halfWidth + (idx === 3 ? -signed : signed));
-                    const centerShift = (idx === 3 ? -signed : signed) / 2;
-                    model.center = _add(startModel.center, _mul(L.point(u.x, u.y), centerShift));
-                }
-                const newCorners = buildRectLatLngsFromModel(model);
-                polygon.setLatLngs([newCorners]);
-                updateRectScaleHandles(polygon);
-                try { addDistanceLabels(polygon); } catch(_) {}
-                try { updatePolygonWatermark(polygon); } catch(_) {}
-            });
-            handle.on('dragend', () => {
-                const mdl = computeRectModelFromPolygon(polygon);
-                if (mdl) polygon._rectModel = mdl;
-            });
-        });
-
-        // Corner handles: scale both dimensions
-        corners.forEach((cornerLL, idx) => {
-            const handle = L.marker(cornerLL, { draggable: true, icon: cornerIcon, title: 'Resize' }).addTo(map);
-            polygon._rectScaleHandlesCorner.push(handle);
-            let startPt = null;
-            let startModel = null;
-            handle.on('dragstart', () => {
-                startPt = map.latLngToLayerPoint(handle.getLatLng());
-                startModel = computeRectModelFromPolygon(polygon);
-                polygon._rectModel = startModel;
-            });
-            handle.on('drag', () => {
-                if (!startPt || !startModel) return;
-                const curPt = map.latLngToLayerPoint(handle.getLatLng());
-                const delta = L.point(curPt.x - startPt.x, curPt.y - startPt.y);
-                const u = startModel.uVec; const v = startModel.vVec;
-                // Corner signs relative to u and v axes
-                const signU = (idx === 0 || idx === 3) ? -1 : 1; // left corners reduce u
-                const signV = (idx === 0 || idx === 1) ? -1 : 1; // top corners reduce v
-                const du = _dot(delta.x, delta.y, u.x, u.y) * signU;
-                const dv = _dot(delta.x, delta.y, v.x, v.y) * signV;
-                let model = { ...startModel };
-                model.halfWidth = Math.max(1, startModel.halfWidth + du);
-                model.halfHeight = Math.max(1, startModel.halfHeight + dv);
-                // Center shifts half of each
-                model.center = _add(
-                    _add(startModel.center, _mul(L.point(u.x, u.y), du / 2 * signU)),
-                    _mul(L.point(v.x, v.y), dv / 2 * signV)
-                );
-                const newCorners = buildRectLatLngsFromModel(model);
-                polygon.setLatLngs([newCorners]);
-                updateRectScaleHandles(polygon);
-                try { addDistanceLabels(polygon); } catch(_) {}
-                try { updatePolygonWatermark(polygon); } catch(_) {}
-            });
-            handle.on('dragend', () => {
-                const mdl = computeRectModelFromPolygon(polygon);
-                if (mdl) polygon._rectModel = mdl;
-            });
-        });
-
-        updateRectScaleHandles(polygon);
-    } catch(_) {}
-}
-
-function disableRectScaleMode(polygon) {
-    try {
-        if (!polygon._rectScaleActive) return;
-        polygon._rectScaleActive = false;
-        if (polygon._rectScaleHandlesMid) polygon._rectScaleHandlesMid.forEach(h => { try { map.removeLayer(h); } catch(_){} });
-        if (polygon._rectScaleHandlesCorner) polygon._rectScaleHandlesCorner.forEach(h => { try { map.removeLayer(h); } catch(_){} });
-        polygon._rectScaleHandlesMid = [];
-        polygon._rectScaleHandlesCorner = [];
-        // Optionally resume default edit mode and select this shape
-        try {
-            if (polygon._resumeEditAfterScale) {
-                const editHandler = map?._drawControl?._toolbars?.edit?._modes?.edit?.handler;
-                if (editHandler) {
-                    editHandler.enable();
-                    setTimeout(() => {
-                        try {
-                            const group = editHandler._markersGroup || editHandler._featureGroup || null;
-                            if (group && typeof group.eachLayer === 'function') {
-                                group.eachLayer(function(marker){
-                                    if (marker && marker._shape === polygon) { try { marker.fire('click'); } catch(_) {} }
-                                });
-                            }
-                        } catch(_) {}
-                    }, 60);
-                }
-            }
-        } catch(_) {}
-        polygon._resumeEditAfterScale = false;
-    } catch(_) {}
-}
-
-function updateRectScaleHandles(polygon) {
-    try {
-        const corners = polygon.getLatLngs()[0];
-        if (!corners || corners.length < 4) return;
-        const mids = [
-            L.latLng((corners[0].lat + corners[1].lat) / 2, (corners[0].lng + corners[1].lng) / 2),
-            L.latLng((corners[1].lat + corners[2].lat) / 2, (corners[1].lng + corners[2].lng) / 2),
-            L.latLng((corners[2].lat + corners[3].lat) / 2, (corners[2].lng + corners[3].lng) / 2),
-            L.latLng((corners[3].lat + corners[0].lat) / 2, (corners[3].lng + corners[0].lng) / 2)
-        ];
-        if (polygon._rectScaleHandlesMid) {
-            polygon._rectScaleHandlesMid.forEach((h, i) => { try { h.setLatLng(mids[i]); } catch(_){} });
-        }
-        if (polygon._rectScaleHandlesCorner) {
-            polygon._rectScaleHandlesCorner.forEach((h, i) => { try { h.setLatLng(corners[i]); } catch(_){} });
-        }
-    } catch(_) {}
-}
+// ✅ MIGRATED: enableRectScaleMode, disableRectScaleMode, updateRectScaleHandles moved to src/tool/rectangle/edit.js

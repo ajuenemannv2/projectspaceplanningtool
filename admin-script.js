@@ -1,6 +1,10 @@
 // Admin Panel with Database Integration
 // Supabase is loaded via CDN and available globally
 
+// SECURITY WARNING: Write operations disabled for security
+// All database write operations have been disabled to prevent unauthorized access
+// Only read operations are allowed in this version
+
 class AdminPanelDatabase {
     constructor() {
         this.projects = [];
@@ -251,6 +255,11 @@ class AdminPanelDatabase {
 
     // Project Management
     async createProject(projectData) {
+        // SECURITY: Write operations disabled
+        console.warn('🚫 SECURITY: Write operations disabled for security');
+        alert('Write operations have been disabled for security. Contact administrator.');
+        return { error: 'Write operations disabled' };
+        
         try {
             console.log('🔧 Creating project with data:', projectData);
             

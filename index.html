@@ -16,10 +16,25 @@
     <!-- Supabase -->
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="config/public-supabase-config.js"></script>
+    
+    <!-- HTML2Canvas for image export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <!-- Runtime config (non-secret toggles) and helpers -->
     <script src="src/core/config.js"></script>
     <script src="src/core/supabase-client.js"></script>
     <script src="src/core/logger.js"></script>
+    <script src="src/core/security.js"></script>
+    <script src="src/tool/init/unified-init.js"></script>
+    <script src="src/tool/drawing/geometry-lib.js"></script>
+    <script src="src/tool/drawing/measurement-ui.js"></script>
+    <script src="src/tool/drawing/fence-draw-session.js"></script>
+    <!-- <script src="src/tool/drawing/custom-drawing.js"></script> OLD VERSION -->
+    <script src="src/tool/drawing/custom-drawing-v2.js"></script>
+    <script src="src/tool/editing/safety.js"></script>
+    <script src="src/tool/editing/core.js"></script>
+    <script src="src/tool/editing/panel.js"></script>
+    <script src="src/tool/editing/main.js"></script>
+    <script src="src/tool/ui/toolbar.js"></script>
     <script src="src/tool/ui/banners.js"></script>
     <script src="src/tool/map-init.js"></script>
     <script src="src/tool/data/selection.js"></script>
@@ -32,46 +47,145 @@
     <script src="src/tool/ui/modals.js"></script>
     <script src="src/tool/drawing/controls.js"></script>
     <script src="src/tool/export/topojson.js"></script>
+    <!-- Tool Modules (One file per tool) -->
+    <script src="src/tool/rectangle.js"></script>
+    <script src="src/tool/polygon.js"></script>
+    <script src="src/tool/crane.js"></script>
+    <script src="src/tool/fence.js"></script>
 </head>
 <body>
     <div class="container">
-        <!-- Header -->
-        <header class="header">
-            <div class="header-content">
-                <h1>Project Space Planning Tool</h1>
-                <p>Select your project and draw your requested space area on the map below</p>
-                <div class="header-buttons">
-                    <a href="logistics-map.html" class="admin-link logistics-link" onclick="goToLogisticsMap(event)">
-                        <i class="fas fa-map"></i> Logistics Map
-                    </a>
-                    <a href="admin.html" class="admin-link" onclick="openAdminPanel(event)">
-                        <i class="fas fa-cog"></i> Admin Panel
-                    </a>
+        <!-- Top Toolbar (Revit-style) -->
+        <div class="top-toolbar">
+            <div class="toolbar-section">
+                <div class="toolbar-group">
+                    <h3>Drawing Tools</h3>
+                    <div class="toolbar-buttons">
+                        <button id="rectangleTool" class="toolbar-btn active" title="Draw Rectangle">
+                            <i class="fas fa-square"></i>
+                            <span>Rectangle</span>
+                        </button>
+                        <button id="polygonTool" class="toolbar-btn" title="Draw Polygon">
+                            <i class="fas fa-draw-polygon"></i>
+                            <span>Polygon</span>
+                        </button>
+                        <button id="fenceTool" class="toolbar-btn" title="Draw Fence">
+                            <i class="fas fa-route"></i>
+                            <span>Fence</span>
+                        </button>
+                        <button id="craneTool" class="toolbar-btn" title="Draw Crane">
+                            <i class="fas fa-cog"></i>
+                            <span>Crane</span>
+                        </button>
+                        <button id="undoTool" class="toolbar-btn" title="Undo Last Action">
+                            <i class="fas fa-undo"></i>
+                            <span>Undo</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="toolbar-group">
+                    <h3>Edit Tools</h3>
+                    <div class="toolbar-buttons">
+                        <button id="selectTool" class="toolbar-btn" title="Select and Edit">
+                            <i class="fas fa-mouse-pointer"></i>
+                            <span>Select</span>
+                        </button>
+                        <button id="editTool" class="toolbar-btn" title="Edit Selected">
+                            <i class="fas fa-edit"></i>
+                            <span>Edit</span>
+                        </button>
+                        <button id="deleteTool" class="toolbar-btn" title="Delete Selected">
+                            <i class="fas fa-trash"></i>
+                            <span>Delete</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="toolbar-group">
+                    <h3>View Tools</h3>
+                    <div class="toolbar-buttons">
+                        <button id="zoomIn" class="toolbar-btn" title="Zoom In">
+                            <i class="fas fa-search-plus"></i>
+                        </button>
+                        <button id="zoomOut" class="toolbar-btn" title="Zoom Out">
+                            <i class="fas fa-search-minus"></i>
+                        </button>
+                        <button id="fitToView" class="toolbar-btn" title="Fit to View">
+                            <i class="fas fa-expand-arrows-alt"></i>
+                        </button>
+                        <button id="resetView" class="toolbar-btn" title="Reset View">
+                            <i class="fas fa-home"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="toolbar-group">
+                    <h3>Export Tools</h3>
+                    <div class="toolbar-buttons">
+                        <button id="exportImage" class="toolbar-btn" title="Export as Image">
+                            <i class="fas fa-image"></i>
+                            <span>Image</span>
+                        </button>
+                        <button id="exportJSON" class="toolbar-btn" title="Export as JSON">
+                            <i class="fas fa-code"></i>
+                            <span>JSON</span>
+                        </button>
+                    </div>
                 </div>
             </div>
-        </header>
+            
+            <div class="toolbar-section right">
+                <div class="toolbar-group">
+                    <h3>Navigation</h3>
+                    <div class="toolbar-buttons">
+                        <a href="logistics-map.html" class="toolbar-btn" title="Logistics Map">
+                            <i class="fas fa-map"></i>
+                            <span>Logistics</span>
+                        </a>
+                        <a href="admin.html" class="toolbar-btn" title="Admin Panel">
+                            <i class="fas fa-cog"></i>
+                            <span>Admin</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
 
 
         <!-- Main Content -->
         <main class="main-content">
-            <!-- Form Panel -->
-            <div class="form-panel">
-                <div class="form-section">
-                    <h3>Space Details</h3>
-                    
+            <!-- Left Panel (Project Information) -->
+            <div class="left-panel">
+                <div class="panel-header">
+                    <h2>Project Information</h2>
+                </div>
+                
+                <div class="panel-content">
                     <div class="form-group">
-                        <label for="projectSelect">Project *</label>
+                        <label for="projectSelect">Project * <span class="required-indicator">Required</span></label>
                         <select id="projectSelect" required>
                             <option value="">Select project</option>
                         </select>
                     </div>
                     
                     <div class="form-group">
-                        <label for="projectPhases">Project Phases *</label>
+                        <label for="projectPhases">Project Phases * <span class="required-indicator">Required</span></label>
                         <div id="projectPhases" class="phase-checkboxes">
                             <div class="phase-loading">Loading phases...</div>
                         </div>
                         <small class="form-help">Select one or more phases for this space</small>
+                    </div>
+                </div>
+                
+                <div class="panel-header">
+                    <h2>Space Information</h2>
+                </div>
+                
+                <div class="panel-content">
+                    <div class="form-group">
+                        <label for="spaceName">Space Name *</label>
+                        <input type="text" id="spaceName" name="spaceName" required placeholder="Enter space name">
                     </div>
                     
                     <div class="form-group">
@@ -89,18 +203,42 @@
                         </select>
                     </div>
                     
-                    
-                    
-                    
-                    
                     <div class="form-group">
                         <label for="description">Description</label>
                         <textarea id="description" rows="3" placeholder="Describe your space requirements, equipment, materials, access needs, or special considerations..."></textarea>
                     </div>
+                    
+                    <button type="submit" id="saveSpace" class="btn btn-success" disabled>Save Space</button>
+                </div>
+                
+                <!-- Drawing Status -->
+                <div class="panel-header">
+                    <h2>Status</h2>
+                </div>
+                
+                <div class="panel-content">
+                    <div class="drawing-status" id="drawingStatus">
+                        <div class="status-indicator">
+                            <span class="status-dot"></span>
+                            <span class="status-text">Ready to draw</span>
+                        </div>
+                        
+                        <!-- Enhanced State Indicators -->
+                        <div class="state-indicators">
+                            <div class="state-row">
+                                <span class="tool-indicator tool-none">No Tool</span>
+                                <span class="stage-indicator stage-idle">Idle</span>
+                            </div>
+                            <div class="state-row">
+                                <span class="selection-indicator no-selection">No selection</span>
+                                <span class="drawing-indicator ready">Ready</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Map Container -->
+            <!-- Map Container (Main Area) -->
             <div class="map-container">
                 <div class="map-header">
                     <h3>Map View</h3>
@@ -112,23 +250,9 @@
                     <div class="map-controls"></div>
                 </div>
                 <div id="map"></div>
-                
-                <!-- Drawing Status -->
-                <div class="drawing-status" id="drawingStatus">
-                    <div class="status-indicator">
-                        <span class="status-dot"></span>
-                        <span class="status-text">Ready to draw</span>
-                    </div>
-                </div>
             </div>
         </main>
 
-        <!-- Action Buttons -->
-        <div class="action-buttons">
-            <button id="saveSpace" class="btn btn-success" disabled>
-                Save Space
-            </button>
-        </div>
 
         <!-- Legacy request modals removed -->
     </div>

@@ -1,7 +1,5 @@
 
-
-I beleive to open this applicaiton you would need my datsbase URL
-
+I believe the below instruction should be able to get it running on a local server. If you have issues I personally have it hosted(Vercel) and connected to a data base(Supabase) at this link.https://projectspaceplanningtool.vercel.app/index.html?project=9&zoom=17 
 
 # Run Locally (Quick Start)
 
@@ -31,7 +29,7 @@ A simple, field-friendly web app to plan and communicate construction site space
 - Cranes (pad, radius, swing/sweep)
 - Fencing / Barricades (temporary or permanent)
 - Utility/Work Zones and other site areas
-- and much more
+- And much more...
 
 ## Who uses this
 - Anyone Involved with Constuction Logistics: Superintendents, PMs, PEs, Safety, etc, to visualize the live site plan (Logistics Map) and export HD images for meetings, signage, and plans
@@ -91,6 +89,27 @@ A simple, field-friendly web app to plan and communicate construction site space
   - Categories: add/rename (Job Trailer, Staging Area, Crane, Fence), set category colors so shapes are consistently color‑coded.
   - Companies: add trades and set the short display label (watermark) printed on shapes and exports.
 
+
+## Development Rules
+
+When implementing any feature, follow the **"Complete Start-to-Finish Functionality"** rule:
+
+### Core Principle
+**"Implement complete start-to-finish functionality for [feature]"**
+
+### The 10-Point Checklist
+1. **UI/UX Design** - Create complete interface with proper styling
+2. **Event Handling** - Make all interactive elements respond to user actions
+3. **Business Logic** - Implement the actual core functionality
+4. **Integration** - Connect with existing systems and APIs
+5. **Error Handling** - Handle all possible failures gracefully
+6. **User Feedback** - Provide clear success/error messages
+7. **Testing & Validation** - Ensure everything works end-to-end
+8. **State Management** - Properly manage application state and cleanup
+9. **Performance** - Consider efficiency and avoid memory leaks
+10. **Documentation** - Include clear comments and debugging info
+
+**Every button, every feature, every component must work from click to completion. No exceptions.**
 
 ## File Structure (high‑level)
 - index.html
