@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supply Chain Opportunity Mapper</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+    <link rel="stylesheet" href="logistics-styles.css" />
+    <link rel="stylesheet" href="supply-chain-styles.css" />
+</head>
+<body>
+<div id="scApp">
+    <header id="scHeader">
+        <div class="sc-header-brand">
+            <i class="fas fa-project-diagram" style="font-size:18px;color:#60a5fa"></i>
+            <h1>Supply Chain Mapper</h1>
+        </div>
+        <nav class="sc-header-nav">
+            <a href="index.html" class="sc-nav-link"><i class="fas fa-arrow-left"></i> Tool</a>
+            <a href="logistics-map.html" class="sc-nav-link"><i class="fas fa-map"></i> Logistics</a>
+            <a href="admin.html" class="sc-nav-link"><i class="fas fa-cog"></i> Admin</a>
+        </nav>
+        <div class="sc-view-toggle">
+            <button class="sc-view-btn sc-view-btn--active" data-view="graph"><i class="fas fa-circle-nodes"></i> Graph</button>
+            <button class="sc-view-btn" data-view="map"><i class="fas fa-map-marked-alt"></i> Map</button>
+            <button class="sc-view-btn" data-view="split"><i class="fas fa-columns"></i> Split</button>
+        </div>
+        <div class="sc-stats-bar">
+            <span id="scEntityCount">Loading…</span>
+            <span>·</span><span id="scRelCount"></span>
+            <span>·</span><span id="scPolCount"></span>
+        </div>
+        <div class="sc-header-nav">
+            <button class="sc-header-btn" id="scHeatmapBtn"><i class="fas fa-fire"></i> Heatmap</button>
+            <button class="sc-header-btn" id="scExportBtn"><i class="fas fa-download"></i> Export</button>
+        </div>
+    </header>
+    <div id="scBody">
+        <aside id="scSidebar"><div id="scFilterPanel"></div></aside>
+        <main id="scMain">
+            <div id="scLoading">
+                <div class="sc-loading-spinner"></div>
+                <div class="sc-loading-text">Loading supply chain data…</div>
+            </div>
+            <div id="scGraphContainer"></div>
+            <div id="scMapContainer" class="sc-hidden"></div>
+        </main>
+        <aside id="scDrawer">
+            <div class="sc-drawer-header">
+                <span class="sc-drawer-title">Entity Detail</span>
+                <button class="sc-drawer-close" id="scDrawerClose">&#x2715;</button>
+            </div>
+            <div id="scDrawerContent">
+                <div style="padding:2rem;text-align:center;color:var(--gray-400);font-size:0.875rem;">Click any node to see details</div>
+            </div>
+        </aside>
+    </div>
+</div>
+<div id="globalErrorBanner" class="global-error-banner">
+    <div class="banner-content">
+        <span id="globalErrorText">An unexpected error occurred.</span>
+        <div class="banner-actions">
+            <button id="globalErrorRetry" class="btn">Retry</button>
+            <button id="globalErrorDismiss" class="btn">Dismiss</button>
+        </div>
+    </div>
+</div>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<script src="config/supply-chain-config.js"></script>
+<script src="src/core/config.js"></script>
+<script src="src/core/supabase-client.js"></script>
+<script src="src/core/logger.js"></script>
+<script src="src/core/security.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script src="https://unpkg.com/cytoscape@3.26.0/dist/cytoscape.min.js"></script>
+<script src="https://unpkg.com/webcola@3.4.0/WebCola/cola.min.js"></script>
+<script src="https://unpkg.com/cytoscape-cola@2.5.1/cytoscape-cola.js"></script>
+<script src="src/supply-chain/sc-config.js"></script>
+<script src="src/supply-chain/sc-data.js"></script>
+<script src="src/supply-chain/sc-scoring.js"></script>
+<script src="src/supply-chain/sc-filter-panel.js"></script>
+<script src="src/supply-chain/sc-graph-view.js"></script>
+<script src="src/supply-chain/sc-map-view.js"></script>
+<script src="src/supply-chain/sc-detail-panel.js"></script>
+<script src="src/supply-chain/sc-mapper.js"></script>
+</body>
+</html>
