@@ -1,18 +1,18 @@
 (function(){
-    var _data   = null;
-    var _scores = {};
-    var _view   = 'graph';
+    var _data        = null;
+    var _scores      = {};
+    var _view        = 'graph';
     var _filterState = null;
     var _filterDebounce = null;
 
     function init() {
-        var errorBanner = document.getElementById('globalErrorBanner');
-        var errorText   = document.getElementById('globalErrorText');
-        var errorRetry  = document.getElementById('globalErrorRetry');
+        var errorBanner  = document.getElementById('globalErrorBanner');
+        var errorText    = document.getElementById('globalErrorText');
+        var errorRetry   = document.getElementById('globalErrorRetry');
         var errorDismiss = document.getElementById('globalErrorDismiss');
 
         function showError(msg, retryFn) {
-            if (errorText)  errorText.textContent = msg;
+            if (errorText)   errorText.textContent = msg;
             if (errorBanner) errorBanner.classList.add('visible');
             if (errorRetry)  errorRetry.onclick = retryFn || null;
             if (errorDismiss) errorDismiss.onclick = function(){ errorBanner.classList.remove('visible'); };
@@ -22,6 +22,7 @@
         window.SCDetailPanel.init(document.getElementById('scDrawer'));
         window.SCGraphView.init(document.getElementById('scGraphContainer'));
         window.SCMapView.init(document.getElementById('scMapContainer'));
+        window.SCOpportunities.init(document.getElementById('scSidebar'));
 
         // Wire view toggle
         document.querySelectorAll('.sc-view-btn').forEach(function(btn) {
@@ -61,7 +62,6 @@
             });
         }
 
-        // Load data
         loadData(showError);
     }
 
@@ -71,16 +71,15 @@
 
         window.SCData.fetchAll().then(function(data) {
             _data = data;
-
-            // Cache entities for filter panel rebuild
             window._scEntitiesCache = data.entities;
 
-            // Compute scores
+            // Compute scores — now includes billImpacts for full legislative signal
             _scores = window.SCScoring.computeAll(
                 data.entities,
                 data.relationships,
                 data.policyImpacts,
-                data.sectorTrends
+                data.sectorTrends,
+                data.billImpacts
             );
             window._scScoresCache = _scores;
 
@@ -91,16 +90,21 @@
             );
             _filterState = window.SCFilterPanel.getState();
 
-            // Load graph
-            window.SCGraphView.load(data.entities, data.relationships, _scores);
+            // Render opportunities panel (wraps filter panel in tabs)
+            window.SCOpportunities.render(data.entities, _scores, data.instruments);
 
-            // Load map
+            // Load graph and map
+            window.SCGraphView.load(data.entities, data.relationships, _scores);
             window.SCMapView.load(data.entities, _scores);
 
-            // Update stats
             updateStats(data);
 
             if (loadingEl) loadingEl.classList.add('sc-hidden');
+
+            // Persist scores to DB asynchronously (non-blocking)
+            window.SCData.persistScores(_scores).catch(function(err) {
+                LOG.warn('Score persistence failed (non-critical)', err);
+            });
 
         }).catch(function(err) {
             LOG.error('SCMapper load error', err);
@@ -119,9 +123,13 @@
         _view = view;
         var graphEl = document.getElementById('scGraphContainer');
         var mapEl   = document.getElementById('scMapContainer');
-        var btns    = document.querySelectorAll('.sc-view-btn');
 
-        btns.forEach(function(b){ b.classList.toggle('sc-view-btn--active', b.dataset.view === view); });
+        document.querySelectorAll('.sc-view-btn').forEach(function(b){
+            b.classList.toggle('sc-view-btn--active', b.dataset.view === view);
+        });
+
+        graphEl.classList.remove('sc-split-pane');
+        mapEl.classList.remove('sc-split-pane');
 
         if (view === 'graph') {
             graphEl.classList.remove('sc-hidden');
@@ -153,7 +161,7 @@
         if (!png) return;
         var a = document.createElement('a');
         a.href = png;
-        a.download = 'supply-chain-map-' + new Date().toISOString().slice(0,10) + '.png';
+        a.download = 'investor-chain-' + new Date().toISOString().slice(0,10) + '.png';
         a.click();
     }
 

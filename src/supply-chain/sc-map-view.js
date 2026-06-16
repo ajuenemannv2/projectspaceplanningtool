@@ -84,6 +84,10 @@
             if (filterState.countries.length && !filterState.countries.includes(ent.country_code)) visible = false;
             if (sc.structural < filterState.structuralMin || sc.structural > filterState.structuralMax) visible = false;
             if (sc.trajectory < filterState.trajectoryMin || sc.trajectory > filterState.trajectoryMax) visible = false;
+            if (filterState.policyDirections && filterState.policyDirections.length) {
+                var mdir = sc.trajectory >= 10 ? 'tailwind' : sc.trajectory <= -10 ? 'headwind' : 'neutral';
+                if (!filterState.policyDirections.includes(mdir)) visible = false;
+            }
             if (filterState.search) {
                 if (!(ent.name || '').toLowerCase().includes(filterState.search)) visible = false;
             }

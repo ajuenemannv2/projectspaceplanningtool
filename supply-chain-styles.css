@@ -527,5 +527,118 @@ body { overflow: hidden; }
 .banner-actions .btn { background: rgba(255,255,255,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.4); padding: 4px 12px; border-radius: var(--radius-sm); cursor: pointer; font-size: var(--font-size-sm); }
 .banner-actions .btn:hover { background: rgba(255,255,255,0.3); }
 
+/* ---- SIDEBAR TABS ---- */
+.sc-tab-bar {
+    display: flex;
+    border-bottom: 1px solid var(--gray-200);
+    background: var(--gray-50);
+    flex-shrink: 0;
+}
+.sc-tab {
+    flex: 1;
+    padding: var(--space-3) var(--space-2);
+    border: none;
+    background: none;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    color: var(--gray-500);
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 2px solid transparent;
+    transition: all var(--transition-fast);
+}
+.sc-tab:hover { color: var(--primary-700); background: var(--primary-50); }
+.sc-tab--active { color: var(--primary-700); border-bottom-color: var(--primary-600); background: #fff; }
+
+.sc-tab-pane { display: none; flex-direction: column; flex: 1; overflow-y: auto; }
+.sc-tab-pane--active { display: flex; }
+
+/* ---- OPPORTUNITIES PANEL ---- */
+.sc-opp-section { padding: var(--space-3) var(--space-3) 0; }
+.sc-opp-section-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--gray-400);
+    margin-bottom: var(--space-2);
+    padding-bottom: var(--space-1);
+    border-bottom: 1px solid var(--gray-100);
+}
+.sc-opp-empty {
+    padding: var(--space-4);
+    font-size: var(--font-size-sm);
+    color: var(--gray-400);
+    text-align: center;
+}
+
+.sc-opp-card {
+    display: flex;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-2);
+    margin-bottom: var(--space-2);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-md);
+    background: #fff;
+    cursor: pointer;
+    transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+}
+.sc-opp-card:hover { border-color: var(--primary-300); box-shadow: var(--shadow-md); }
+.sc-opp-card--fund { background: var(--primary-50); border-color: var(--primary-200); }
+.sc-opp-card--fund:hover { border-color: var(--primary-400); }
+
+.sc-opp-rank {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--gray-200);
+    color: var(--gray-600);
+    font-size: 10px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+.sc-opp-rank--fund { background: var(--primary-200); color: var(--primary-800); border-radius: var(--radius-sm); font-size: 8px; width: 26px; }
+
+.sc-opp-body { flex: 1; min-width: 0; }
+
+.sc-opp-top {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex-wrap: wrap;
+    margin-bottom: 2px;
+}
+.sc-opp-ticker { font-size: var(--font-size-sm); font-weight: 700; color: var(--gray-900); }
+.sc-opp-exch { font-size: 9px; padding: 1px 5px; background: var(--gray-100); border-radius: 999px; color: var(--gray-500); font-weight: 600; }
+.sc-opp-liq-warn { font-size: 9px; padding: 1px 5px; background: var(--warning-500); border-radius: 999px; color: #fff; font-weight: 700; }
+.sc-opp-quadrant { font-size: 10px; font-weight: 500; margin-left: auto; white-space: nowrap; }
+
+.sc-opp-name { font-size: 11px; color: var(--gray-600); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-opp-insight { font-size: 10px; color: var(--gray-500); line-height: 1.4; margin-bottom: 4px; }
+
+.sc-opp-scores {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: 2px;
+}
+.sc-opp-conviction-bar-wrap {
+    flex: 1;
+    height: 5px;
+    background: var(--gray-100);
+    border-radius: 999px;
+    overflow: hidden;
+}
+.sc-opp-conviction-bar { height: 100%; border-radius: 999px; transition: width var(--transition-normal); }
+.sc-opp-conviction-val { font-size: 11px; font-weight: 700; color: var(--gray-700); width: 24px; text-align: right; flex-shrink: 0; }
+
+.sc-opp-sub-scores { font-size: 10px; color: var(--gray-400); }
+.sc-opp-sub-scores strong { color: var(--gray-600); }
+
 /* ---- UTILITIES ---- */
 .sc-hidden { display: none !important; }
